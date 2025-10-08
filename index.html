@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FormasChoferes - Iniciar Sesión</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Estilos para el toggle switch de bonos */
+        .toggle-checkbox:checked { background-color: #2563eb; }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+        .toggle-checkbox:checked + .toggle-label:after {
+            transform: translateX(100%);
+            border-color: white;
+        }
+        .toggle-label:after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 9999px;
+            border: 2px solid transparent;
+            background: white;
+            box-shadow: 0 0 2px rgba(0,0,0,0.2);
+            transition: transform .2s;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div id="app" class="min-h-screen flex flex-col items-center justify-center p-4">
+        <div id="loading-view">
+            <div class="loader"></div>
+            <p class="mt-4 text-gray-600">Cargando aplicación...</p>
+        </div>
+
+        <div id="login-view" class="hidden w-full max-w-md">
+            <div class="bg-white p-8 rounded-xl shadow-md">
+                <div class="text-center mb-8">
+                    <h1 class="text-3xl font-bold text-gray-800">FormasChoferes</h1>
+                    <p class="text-gray-500 mt-2">Bienvenido. Inicia sesión.</p>
+                </div>
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico</label>
+                        <input type="email" id="email" required class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div class="mb-6">
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                        <input type="password" id="password" required class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Iniciar Sesión</button>
+                </form>
+                <div id="login-error" class="mt-4 text-center text-red-500 text-sm"></div>
+            </div>
+        </div>
+
+        <div id="chofer-view" class="hidden w-full max-w-4xl">
+             <div class="bg-white p-8 rounded-xl shadow-md">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Panel del Chofer</h2>
+                    <button id="logout-button-chofer" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                </div>
+                <div id="chofer-content"></div>
+            </div>
+        </div>
+
+        <div id="trafico-view" class="hidden w-full max-w-6xl">
+            <div class="bg-white p-8 rounded-xl shadow-md">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Panel de Tráfico</h2>
+                    <button id="logout-button-trafico" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                </div>
+                <div id="trafico-content" class="mt-6"></div>
+            </div>
+        </div>
+
+        <div id="administrador-view" class="hidden w-full max-w-7xl">
+            <div class="bg-white p-8 rounded-xl shadow-md">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Panel de Administración</h2>
+                    <button id="logout-button-admin" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                </div>
+                 <div class="border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
+                        <button data-tab="pendientes" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-blue-600 border-blue-600">Pendientes</button>
+                        <button data-tab="por-pagar" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Por Pagar</button>
+                        <button data-tab="historial" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Historial Pagados</button>
+                        <button data-tab="flota" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Flota</button>
+                        <button data-tab="usuarios" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Usuarios</button>
+                        <button data-tab="reportes" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Reportes</button>
+                    </nav>
+                </div>
+
+                <div id="admin-content-pendientes" class="admin-tab-content mt-6"></div>
+                <div id="admin-content-por-pagar" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-historial" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-flota" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-usuarios" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-reportes" class="admin-tab-content hidden mt-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="upload-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"></div>
+    <div id="review-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"></div>
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4"></div>
+    <div id="edit-viaje-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
+
+    <script type="module">
+        // --- SUPABASE & APP CONFIG ---
+        const SUPABASE_URL = 'https://olunfpafoxjsoisqkhri.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9sdW5mcGFmb3hqc29pc3FraHJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNzQ3MzcsImV4cCI6MjA3NDk1MDczN30.CrqqVhJXSMwqCtNgZDtipcE26OHEgkyfrCNxFEvPp1o';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let currentUser = null;
+
+        // --- PAYMENT RULES & CONSTANTS ---
+        const PAYMENT_RULES = {
+            PAGO_DECIMALES: { 0.25: 125, 0.50: 150, 0.75: 375, 1.00: 500, 1.25: 625, 1.50: 750, 1.75: 875, 2.00: 1000, 2.25: 1125, 2.50: 1250, 2.75: 1375, 3.00: 1500, 3.25: 1625, 3.50: 1750 },
+            BONO_DIESEL: { 0.25: 43.75, 0.50: 87.50, 0.75: 131.25, 1.00: 175.00, 1.25: 218.75, 1.50: 262.50, 1.75: 306.25, 2.00: 350.00, 2.25: 393.75, 2.50: 437.50, 2.75: 481.25, 3.00: 525.00, 3.25: 568.75, 3.50: 612.50, 3.75: 656.25, 4.00: 700.00, 4.25: 743.75, 4.50: 787.50, 4.75: 831.25, 5.00: 875.00},
+            ESTANCIAS_BASE: { 2: 70, 3: 140, 4: 210, 5: 280, 6: 350, 7: 420, 8: 480, 9: 550, 10: 620 },
+            ESTANCIAS_CLIENTE: { 2: 120, 3: 240, 4: 360, 5: 480, 6: 600, 7: 720, 8: 840, 9: 960, 10: 1080 },
+            BONOS_CRUCE: {
+                doce_horas: { label: "Bono 12 Horas", amount: 350 },
+                produccion: { label: "Bono de Producción", amount: 400 },
+                aduana: { label: "Revisión Aduana (Rojo/100%)", amount: 230 },
+                amarres: { label: "Amarres y Enlones", amount: 450 },
+            },
+            BONOS_FORANEO_CH: {
+                quimico: { label: "Bono Químico", amount: 250 },
+                pericas: { label: "Bono Cruce por Pericas", amount: 50 }
+            },
+             BONOS_FORANEO_PAC: {
+                camara: { label: "Bono de Cámara", amount: 300 },
+                sierra: { label: "Bono Sierra", amount: 500 },
+                doble_operador_guamuchil: { label: "Bono Doble Op. (Guamúchil)", amount: 2439 },
+                doble_operador_obregon: { label: "Bono Doble Op. (Obregón)", amount: 1726 },
+            }
+        };
+
+        // --- CORE APP LOGIC ---
+        const showAlert = (message, type = 'success') => {
+            const el = document.createElement('div');
+            el.className = `fixed top-5 right-5 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white py-2 px-4 rounded-lg shadow-lg z-[100] max-w-sm`;
+            el.innerHTML = message.replace(/\n/g, '<br>');
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), type === 'error' ? 12000 : 4000);
+        };
+        
+        const showView = (viewId) => {
+            ['loading-view', 'login-view', 'chofer-view', 'trafico-view', 'administrador-view'].forEach(id => {
+                document.getElementById(id).classList.toggle('hidden', id !== viewId);
+            });
+        };
+        
+        const handleLogin = async (event) => {
+            event.preventDefault();
+            document.getElementById('login-error').textContent = '';
+            const { error } = await supabase.auth.signInWithPassword({
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+            });
+            if (error) { document.getElementById('login-error').textContent = 'Error: Credenciales inválidas.'; } 
+            else { checkSession(); }
+        };
+
+        const handleLogout = async () => {
+            await supabase.auth.signOut();
+            currentUser = null;
+            showView('login-view');
+        };
+
+        const navigateByUserRole = async (user) => {
+            currentUser = user;
+            try {
+                const { data: profile, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+                if (error) throw error;
+
+                switch (profile.role) {
+                    case 'Chofer': showView('chofer-view'); await loadChoferData(); break;
+                    case 'Trafico': showView('trafico-view'); await loadTraficoData(); break;
+                    case 'Admin': showView('administrador-view'); await loadAdminData(); break;
+                    default: throw new Error(`Rol "${profile.role}" no reconocido.`);
+                }
+            } catch (err) {
+                showAlert(`Error Crítico: ${err.message}.`, 'error');
+                console.error("Error de carga de datos:", err);
+                handleLogout();
+            }
+        };
+        
+        const checkSession = async () => {
+             const { data: { session } } = await supabase.auth.getSession();
+             if (session) { await navigateByUserRole(session.user); } 
+             else { showView('login-view'); }
+        };
+        
+        // --- CHOFER LOGIC ---
+        const loadChoferData = async () => {
+            const choferContent = document.getElementById('chofer-content');
+            choferContent.innerHTML = `<div class="loader mx-auto"></div>`;
+            try {
+                const { data: viajes, error } = await supabase.from('viajes').select(`*, camiones(nombre_identificador), cajas(nombre_identificador), coordenadas(*)`).eq('chofer_id', currentUser.id).order('created_at', {ascending: false});
+                if (error) throw error;
+                
+                const viajesAsignados = viajes.filter(v => v.status === 'Asignado');
+                choferContent.innerHTML = `
+                    <h3 class="text-xl font-semibold mb-4">Mis Viajes Asignados</h3>
+                    <div class="space-y-4">
+                    ${viajesAsignados.length === 0 ? '<p>No tienes viajes asignados.</p>' : viajesAsignados.map(v => `
+                        <div class="bg-gray-50 p-4 rounded-lg border">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-bold text-lg">Viaje #${v.id}</h4>
+                                    <p class="text-sm text-gray-500">Asignado: ${new Date(v.created_at).toLocaleDateString()}</p>
+                                    <p class="text-sm text-gray-600">Vehículo: ${v.camiones?.nombre_identificador || 'N/A'} | Caja: ${v.cajas?.nombre_identificador || 'N/A'}</p>
+                                </div>
+                                <span class="text-sm font-medium py-1 px-3 rounded-full bg-blue-100 text-blue-800">${v.status}</span>
+                            </div>
+                            <div class="mt-4">
+                                <h5 class="font-semibold">Ruta:</h5>
+                                <ol class="list-decimal list-inside mt-2 text-gray-700">${(v.coordenadas && v.coordenadas.length > 0) ? v.coordenadas.sort((a,b)=>a.orden - b.orden).map(c=>`<li>${c.descripcion} - ${c.fecha_entrega}</li>`).join('') : '<li>Sin ruta.</li>'}</ol>
+                            </div>
+                            <div class="mt-4 text-right"><button data-viaje-id="${v.id}" class="complete-viaje-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Completar Viaje</button></div>
+                        </div>`).join('')}
+                    </div>`;
+            } catch(err) {
+                showAlert(`Error al cargar tus viajes: ${err.message}`, 'error');
+                choferContent.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+
+        const openUploadModal = (viajeId) => {
+            const modal = document.getElementById('upload-modal');
+            modal.innerHTML = `
+                <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-lg m-auto">
+                    <div id="upload-form-container">
+                        <h3 class="text-xl font-semibold mb-4">Completar Viaje #${viajeId}</h3>
+                        <p class="text-gray-600 mb-6">Sube el comprobante de entrega para marcar este viaje como completado.</p>
+                        <form id="complete-trip-form" data-viaje-id="${viajeId}">
+                            <div class="mb-4">
+                                <label for="pod-file" class="block text-sm font-medium text-gray-700 mb-2">Archivo del Comprobante</label>
+                                <input type="file" id="pod-file" name="podFile" required class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                            </div>
+                            <div class="mt-6 flex justify-end gap-4">
+                                <button type="button" class="close-modal-btn bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Subir y Completar</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div id="upload-progress" class="hidden mt-4">
+                        <div class="loader mx-auto"></div>
+                        <p class="text-center mt-2">Subiendo archivo, por favor espera...</p>
+                    </div>
+                </div>`;
+            modal.classList.remove('hidden');
+        };
+
+        const handleTripCompletion = async (event) => {
+            event.preventDefault();
+            const form = event.target;
+            const viajeId = form.dataset.viajeId;
+            const fileInput = document.getElementById('pod-file');
+            const file = fileInput.files[0];
+
+            if (!file) { showAlert('Por favor, selecciona un archivo.', 'error'); return; }
+
+            document.getElementById('upload-form-container').classList.add('hidden');
+            document.getElementById('upload-progress').classList.remove('hidden');
+
+            try {
+                const filePath = `public/${currentUser.id}/${viajeId}-${Date.now()}-${file.name}`;
+                const { error: uploadError } = await supabase.storage.from('recibos').upload(filePath, file);
+                if (uploadError) throw uploadError;
+
+                const { data: urlData } = supabase.storage.from('recibos').getPublicUrl(filePath);
+                const { error: updateError } = await supabase.from('viajes').update({ status: 'Completado', recibo_diesel_url: urlData.publicUrl }).eq('id', viajeId);
+                if (updateError) throw updateError;
+                
+                showAlert('¡Viaje completado con éxito!');
+                document.getElementById('upload-modal').classList.add('hidden');
+                await loadChoferData();
+            } catch (err) {
+                showAlert(`Error al completar el viaje: ${err.message}`, 'error');
+                document.getElementById('upload-form-container').classList.remove('hidden');
+                document.getElementById('upload-progress').classList.add('hidden');
+            }
+        };
+        
+        // --- TRAFICO LOGIC ---
+        const addCoordenadaInput = (containerId, data = { desc: '', date: '' }) => {
+            const container = document.getElementById(containerId);
+            if(!container) return;
+            const count = container.children.length;
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-11 gap-2 items-center';
+            div.innerHTML = `
+                <div class="col-span-6"><input type="text" name="coordenada_desc" required class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Descripción ${count + 1}" value="${data.desc}"></div>
+                <div class="col-span-4"><input type="date" name="coordenada_date" required class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${data.date}"></div>
+                <button type="button" class="remove-coordenada-btn text-red-500 hover:text-red-700 font-bold col-span-1 text-lg">X</button>
+            `;
+            container.appendChild(div);
+        };
+
+        const loadTraficoData = async () => {
+            const traficoContent = document.getElementById('trafico-content');
+            traficoContent.innerHTML = `<div class="loader mx-auto"></div>`;
+            try {
+                const { data: choferes } = await supabase.from('profiles').select('id, full_name').eq('role', 'Chofer');
+                const { data: camiones } = await supabase.from('camiones').select('id, nombre_identificador');
+                const { data: cajas } = await supabase.from('cajas').select('id, nombre_identificador');
+
+                traficoContent.innerHTML = `
+                    <div class="bg-gray-50 p-6 rounded-lg border">
+                        <h3 class="text-xl font-semibold mb-4">Crear Nuevo Viaje</h3>
+                        <form id="create-viaje-form" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div><label class="block text-sm font-medium">Chofer</label><select name="chofer" required class="mt-1 block w-full border border-gray-300 rounded-md p-2">${choferes.map(c=>`<option value="${c.id}">${c.full_name}</option>`).join('')}</select></div>
+                                <div><label class="block text-sm font-medium">Camión</label><select name="camion" required class="mt-1 block w-full border border-gray-300 rounded-md p-2">${camiones.map(c=>`<option value="${c.id}">${c.nombre_identificador}</option>`).join('')}</select></div>
+                                <div><label class="block text-sm font-medium">Caja</label><select name="caja" required class="mt-1 block w-full border border-gray-300 rounded-md p-2">${cajas.map(c=>`<option value="${c.id}">${c.nombre_identificador}</option>`).join('')}</select></div>
+                            </div>
+                            <div>
+                                <h4 class="text-lg font-medium">Ruta</h4>
+                                <div id="coordenadas-container-create" class="mt-2 space-y-3"></div>
+                                <button type="button" class="add-coordenada-btn mt-2 text-sm bg-gray-200 hover:bg-gray-300 font-semibold py-1 px-3 rounded-lg" data-container="coordenadas-container-create">+ Agregar Parada</button>
+                            </div>
+                            <div class="pt-4"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-700">Asignar Viaje</button></div>
+                        </form>
+                    </div>
+                    <div class="mt-8"><h3 class="text-xl font-semibold mb-4">Viajes Asignados</h3><div id="assigned-viajes-list" class="space-y-4"></div></div>`;
+                addCoordenadaInput('coordenadas-container-create');
+                await loadAssignedViajes();
+            } catch (err) {
+                 showAlert(`Error al cargar datos de Tráfico: ${err.message}`, 'error');
+                 traficoContent.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+        const loadAssignedViajes = async () => {
+            const listContainer = document.getElementById('assigned-viajes-list');
+            listContainer.innerHTML = `<div class="loader mx-auto"></div>`;
+            const { data: viajes, error } = await supabase.from('viajes').select(`id, chofer:chofer_id(full_name), camiones(nombre_identificador), cajas(nombre_identificador)`).eq('status', 'Asignado').order('created_at', { ascending: false });
+            if(error) { showAlert(`Error: ${error.message}`, 'error'); listContainer.innerHTML = ''; return; }
+            if(viajes.length === 0) { listContainer.innerHTML = `<p class="text-gray-500">No hay viajes asignados actualmente.</p>`; return; }
+            listContainer.innerHTML = viajes.map(v => `
+                <div class="bg-white p-4 rounded-lg border flex justify-between items-center gap-4 flex-wrap">
+                    <div>
+                        <p class="font-bold">Viaje #${v.id}</p>
+                        <p class="text-sm text-gray-600">Chofer: ${v.chofer.full_name}</p>
+                        <p class="text-sm text-gray-600">Unidad: ${v.camiones.nombre_identificador} | ${v.cajas.nombre_identificador}</p>
+                    </div>
+                    <div><button class="edit-viaje-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg" data-viaje-id="${v.id}">Editar</button></div>
+                </div>`).join('');
+        };
+        const openEditViajeModal = async (viajeId) => { /* ... */ };
+        const handleCreateViaje = async (event) => { /* ... */ };
+        const handleUpdateViaje = async (event) => { /* ... */ };
+
+        // --- ADMIN LOGIC ---
+        const openConfirmModal = (message, onConfirm) => {
+            const modal = document.getElementById('confirm-modal');
+            modal.innerHTML = `
+                <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm m-auto">
+                    <p class="text-center mb-4">${message}</p>
+                    <div class="flex justify-center gap-4">
+                        <button id="confirm-cancel" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded">Cancelar</button>
+                        <button id="confirm-ok" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">Confirmar</button>
+                    </div>
+                </div>`;
+            modal.classList.remove('hidden');
+            document.getElementById('confirm-cancel').onclick = closeConfirmModal;
+            document.getElementById('confirm-ok').onclick = onConfirm;
+        };
+        const closeConfirmModal = () => { document.getElementById('confirm-modal').classList.add('hidden'); };
+
+        const openReviewModal = async (viajeId) => {
+            const modal = document.getElementById('review-modal');
+            modal.innerHTML = `<div class="bg-white p-8 rounded-xl shadow-md w-full max-w-4xl m-auto"><div class="loader mx-auto"></div></div>`;
+            modal.classList.remove('hidden');
+
+            const { data: viaje, error } = await supabase.from('viajes')
+                .select('*, chofer:chofer_id(*), camiones(*)')
+                .eq('id', viajeId).single();
+
+            if (error || !viaje) {
+                showAlert(`Error al cargar datos del viaje: ${error?.message || 'Viaje no encontrado'}.`, 'error');
+                modal.classList.add('hidden');
+                return;
+            }
+
+            const tipoOperador = viaje.chofer.tipo_operador || 'Local';
+
+            let calculatorHtml = '';
+            // --- BUILD CALCULATOR UI BASED ON OPERATOR TYPE ---
+            switch(tipoOperador) {
+                case 'Cruce':
+                    calculatorHtml = `
+                        <!-- Pago Decimal -->
+                        <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago Principal</h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">Valor Decimal del Viaje</label>
+                                <select id="pago-decimal" class="payment-input mt-1 block w-full p-2 border rounded-md">
+                                    <option value="0">Seleccionar...</option>
+                                    ${Object.keys(PAYMENT_RULES.PAGO_DECIMALES).map(v => `<option value="${v}">${v}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Bono Diesel -->
+                        <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Bono Diésel (Sábado/Festivo)</h4>
+                         <div class="grid grid-cols-2 gap-4">
+                           <div>
+                                <label class="block text-sm font-medium">Decimales del Día</label>
+                                <select id="bono-diesel-decimal" class="payment-input mt-1 block w-full p-2 border rounded-md">
+                                     <option value="0">No Aplica</option>
+                                     ${Object.keys(PAYMENT_RULES.BONO_DIESEL).map(v => `<option value="${v}">${v}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Estancias -->
+                        <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Estancias</h4>
+                         <div class="grid grid-cols-2 gap-4">
+                             <div><label class="block text-sm font-medium">Horas en Base</label><input type="number" id="estancia-base" min="0" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="0"></div>
+                             <div><label class="block text-sm font-medium">Horas en Cliente</label><input type="number" id="estancia-cliente" min="0" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="0"></div>
+                         </div>
+                        <!-- Bonos Cruce -->
+                        <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Bonos Adicionales</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            ${Object.entries(PAYMENT_RULES.BONOS_CRUCE).map(([key, bono]) => `
+                                <label class="flex items-center justify-between bg-gray-50 p-3 rounded-lg cursor-pointer">
+                                    <span class="font-medium text-gray-700">${bono.label}</span>
+                                    <div class="relative inline-block w-10 align-middle select-none">
+                                        <input type="checkbox" name="${key}" id="bono-${key}" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer payment-input"/>
+                                        <label for="bono-${key}" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                                    </div>
+                                </label>`).join('')}
+                        </div>`;
+                    break;
+                case 'Foráneo Chihuahua':
+                    calculatorHtml = `
+                        <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago por Diésel</h4>
+                        <div class="p-4 bg-gray-50 rounded-lg space-y-3">
+                           <div class="grid grid-cols-2 gap-4">
+                                <div><label class="block text-sm font-medium">KM Totales del Viaje</label><input type="number" id="kms-viaje" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="Ej. 750"></div>
+                                <div><label class="block text-sm font-medium">Rendimiento Base</label><input type="text" id="rendimiento-base" class="mt-1 w-full p-2 border bg-gray-200 rounded-md" value="${viaje.camiones?.rendimiento || 'N/A'}" readonly></div>
+                           </div>
+                           <div><label class="block text-sm font-medium">Recarga Real de Diésel (Lts)</label><input type="number" id="recarga-diesel" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="Ej. 220"></div>
+                        </div>
+                        <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Mano de Obra</h4>
+                        <div>
+                            <label class="block text-sm font-medium">Tipo de Corrida</label>
+                            <select id="mano-obra-ch" class="payment-input mt-1 block w-full p-2 border rounded-md">
+                                <option value="0">No Aplica</option><option value="110">Cargado ($110)</option><option value="55">Vacío/PT ($55)</option>
+                            </select>
+                        </div>
+                        <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Bonos Adicionales</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             ${Object.entries(PAYMENT_RULES.BONOS_FORANEO_CH).map(([key, bono]) => `
+                                <label class="flex items-center justify-between bg-gray-50 p-3 rounded-lg cursor-pointer">
+                                    <span class="font-medium text-gray-700">${bono.label}</span>
+                                    <div class="relative inline-block w-10 align-middle select-none"><input type="checkbox" name="${key}" id="bono-${key}" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer payment-input"/><label for="bono-${key}" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label></div>
+                                </label>`).join('')}
+                        </div>
+                    `;
+                     break;
+                 case 'Foráneo Pacífico':
+                    calculatorHtml = `
+                         <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago por Diésel</h4>
+                         <!-- Similar a Chihuahua, pero la lógica de cálculo es diferente -->
+                         <p class="text-sm text-gray-500">Cálculo de diésel para Pacífico en desarrollo.</p>
+
+                         <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Bonos Adicionales</h4>
+                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            ${Object.entries(PAYMENT_RULES.BONOS_FORANEO_PAC).map(([key, bono]) => `
+                                <label class="flex items-center justify-between bg-gray-50 p-3 rounded-lg cursor-pointer">
+                                    <span class="font-medium text-gray-700">${bono.label}</span>
+                                    <div class="relative inline-block w-10 align-middle select-none"><input type="checkbox" name="${key}" id="bono-${key}" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer payment-input"/><label for="bono-${key}" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label></div>
+                                </label>`).join('')}
+                         </div>
+                    `;
+                    break;
+                case 'Local':
+                default:
+                     calculatorHtml = `
+                        <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago Principal</h4>
+                        <div>
+                            <label class="block text-sm font-medium">Valor Decimal del Viaje</label>
+                            <select id="pago-decimal" class="payment-input mt-1 block w-full p-2 border rounded-md"><option value="0">Seleccionar...</option>${Object.keys(PAYMENT_RULES.PAGO_DECIMALES).map(v => `<option value="${v}">${v}</option>`).join('')}</select>
+                        </div>
+                         <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Estancias</h4>
+                         <div class="grid grid-cols-2 gap-4">
+                             <div><label class="block text-sm font-medium">Horas en Base</label><input type="number" id="estancia-base" min="0" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="0"></div>
+                             <div><label class="block text-sm font-medium">Horas en Cliente</label><input type="number" id="estancia-cliente" min="0" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="0"></div>
+                         </div>`;
+                    break;
+            }
+
+            modal.innerHTML = `
+                <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-4xl m-auto max-h-[90vh] flex flex-col">
+                    <div class="flex-shrink-0">
+                        <h3 class="text-2xl font-bold mb-1">Asistente de Liquidación - Viaje #${viaje.id}</h3>
+                        <p class="text-gray-600 mb-4">Chofer: <span class="font-semibold">${viaje.chofer.full_name}</span> | Tipo: <span class="font-semibold bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-sm">${tipoOperador}</span></p>
+                    </div>
+                    
+                    <div class="flex-grow overflow-y-auto pr-4 -mr-4 grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div id="payment-calculator" data-viaje-id="${viaje.id}" data-rendimiento-base="${viaje.camiones?.rendimiento || 0}">
+                            ${calculatorHtml}
+                            <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Ajustes Manuales</h4>
+                            <div id="desglose-manual-container" class="space-y-2"></div>
+                            <button type="button" id="add-desglose-manual-btn" class="mt-2 text-sm bg-gray-200 hover:bg-gray-300 font-semibold py-1 px-3 rounded-lg">+ Agregar Ajuste</button>
+                        </div>
+                        <div class="space-y-6">
+                            <div>
+                                <h4 class="text-lg font-semibold text-gray-800 mb-2">Resumen de Pago</h4>
+                                <div id="payment-summary" class="bg-gray-50 p-4 rounded-lg space-y-2 min-h-[120px]"></div>
+                            </div>
+                             <div>
+                                <h4 class="text-lg font-semibold text-gray-800 mb-2">Comprobante</h4>
+                                ${viaje.recibo_diesel_url ? `<a href="${viaje.recibo_diesel_url}" target="_blank"><img src="${viaje.recibo_diesel_url}" alt="Comprobante" class="max-h-60 w-full rounded-lg border object-contain cursor-pointer"></a>` : '<p class="text-gray-500">No hay comprobante.</p>'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex-shrink-0 mt-8 flex justify-end gap-4 border-t pt-6">
+                        <button type="button" class="close-modal-btn bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                        <button type="button" id="save-payment-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Guardar y Marcar como Pagado</button>
+                    </div>
+                </div>`;
+            
+            recalculatePayment();
+            document.querySelectorAll('.payment-input').forEach(el => el.addEventListener('input', recalculatePayment));
+            document.getElementById('add-desglose-manual-btn').addEventListener('click', () => addDesgloseInput('desglose-manual-container'));
+            document.getElementById('save-payment-btn').addEventListener('click', handleSavePayment);
+        };
+        
+        const getPaymentCalculation = () => {
+            let total = 0;
+            let desglose = [];
+            const calculator = document.getElementById('payment-calculator');
+
+            // --- Pagos Generales ---
+            const decimalValue = document.getElementById('pago-decimal')?.value;
+            if (decimalValue && parseFloat(decimalValue) > 0) {
+                const amount = PAYMENT_RULES.PAGO_DECIMALES[decimalValue];
+                desglose.push({ concepto: `Viaje (Valor ${decimalValue})`, monto: amount });
+                total += amount;
+            }
+
+             // --- Bonos Generales (Cruce) ---
+            Object.entries(PAYMENT_RULES.BONOS_CRUCE).forEach(([key, bono]) => {
+                if (document.getElementById(`bono-${key}`)?.checked) {
+                    desglose.push({ concepto: bono.label, monto: bono.amount });
+                    total += bono.amount;
+                }
+            });
+
+             // --- Estancias (Local y Cruce) ---
+            const horasBase = parseInt(document.getElementById('estancia-base')?.value || '0');
+            if (horasBase >= 2) {
+                const amount = PAYMENT_RULES.ESTANCIAS_BASE[Math.min(horasBase, 10)] || PAYMENT_RULES.ESTANCIAS_BASE[10];
+                desglose.push({ concepto: `Estancia en Base (${horasBase} hrs)`, monto: amount });
+                total += amount;
+            }
+             const horasCliente = parseInt(document.getElementById('estancia-cliente')?.value || '0');
+            if (horasCliente >= 2) {
+                const amount = PAYMENT_RULES.ESTANCIAS_CLIENTE[Math.min(horasCliente, 10)] || PAYMENT_RULES.ESTANCIAS_CLIENTE[10];
+                desglose.push({ concepto: `Estancia en Cliente (${horasCliente} hrs)`, monto: amount });
+                total += amount;
+            }
+            
+            // --- Bono Diesel (Cruce) ---
+            const bonoDieselDecimal = document.getElementById('bono-diesel-decimal')?.value;
+            if (bonoDieselDecimal && parseFloat(bonoDieselDecimal) > 0) {
+                const amount = PAYMENT_RULES.BONO_DIESEL[bonoDieselDecimal];
+                desglose.push({ concepto: `Bono Diésel (Valor ${bonoDieselDecimal})`, monto: amount });
+                total += amount;
+            }
+
+            // --- Cálculos Foráneo Chihuahua ---
+            const kms = parseFloat(document.getElementById('kms-viaje')?.value || '0');
+            const recarga = parseFloat(document.getElementById('recarga-diesel')?.value || '0');
+            const rendimiento = parseFloat(calculator.dataset.rendimientoBase || '0');
+            if (kms > 0 && recarga > 0 && rendimiento > 0) {
+                const litrosIdeales = kms / rendimiento;
+                const litrosSobrantes = litrosIdeales - recarga;
+                if (litrosSobrantes > 0) {
+                    const pagoDiesel = litrosSobrantes * 14.85;
+                    desglose.push({ concepto: `Pago Diésel Sobrante (${litrosSobrantes.toFixed(2)} Lts)`, monto: pagoDiesel });
+                    total += pagoDiesel;
+                }
+            }
+            const manoObraCh = parseFloat(document.getElementById('mano-obra-ch')?.value || '0');
+            if (manoObraCh > 0) {
+                 desglose.push({ concepto: `Mano de Obra (Chihuahua)`, monto: manoObraCh });
+                 total += manoObraCh;
+            }
+            Object.entries(PAYMENT_RULES.BONOS_FORANEO_CH).forEach(([key, bono]) => {
+                 if (document.getElementById(`bono-${key}`)?.checked) {
+                    desglose.push({ concepto: bono.label, monto: bono.amount });
+                    total += bono.amount;
+                }
+            });
+
+            // --- Cálculos Foráneo Pacífico ---
+             Object.entries(PAYMENT_RULES.BONOS_FORANEO_PAC).forEach(([key, bono]) => {
+                 if (document.getElementById(`bono-${key}`)?.checked) {
+                    desglose.push({ concepto: bono.label, monto: bono.amount });
+                    total += bono.amount;
+                }
+            });
+
+            // --- Ajustes Manuales ---
+            document.querySelectorAll('#desglose-manual-container .desglose-row').forEach(row => {
+                 const concepto = row.querySelector('[name=desglose_concepto]').value;
+                 const monto = parseFloat(row.querySelector('[name=desglose_monto]').value);
+                 if(concepto && !isNaN(monto)) {
+                     desglose.push({ concepto: `Ajuste: ${concepto}`, monto: monto });
+                     total += monto;
+                 }
+            });
+
+            return { total, desglose };
+        }
+
+        const recalculatePayment = () => {
+            const summaryContainer = document.getElementById('payment-summary');
+            if (!summaryContainer) return;
+            const { total, desglose } = getPaymentCalculation();
+            summaryContainer.innerHTML = `
+                ${desglose.length > 0 ? desglose.map(item => `
+                    <div class="flex justify-between items-center text-sm">
+                        <span>${item.concepto}</span>
+                        <span class="font-medium">${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.monto)}</span>
+                    </div>`).join('') : '<p class="text-gray-500 text-center py-8">El resumen aparecerá aquí.</p>'}
+                <div class="flex justify-between items-center text-lg font-bold border-t pt-2 mt-2">
+                    <span>PAGO TOTAL</span>
+                    <span id="pago-total-display">${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(total)}</span>
+                </div>`;
+        };
+        
+        const addDesgloseInput = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-12 gap-2 items-center desglose-row';
+            div.innerHTML = `
+                <div class="col-span-7">
+                    <input type="text" name="desglose_concepto" class="payment-input w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Concepto (ej. Descuento)">
+                </div>
+                <div class="col-span-4">
+                    <input type="number" step="0.01" name="desglose_monto" class="payment-input w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Monto">
+                </div>
+                <button type="button" class="remove-desglose-btn text-red-500 hover:text-red-700 font-bold text-lg col-span-1">X</button>`;
+            container.appendChild(div);
+            div.querySelectorAll('.payment-input').forEach(el => el.addEventListener('input', recalculatePayment));
+            div.querySelector('.remove-desglose-btn').addEventListener('click', (e) => {
+                e.target.closest('.desglose-row').remove();
+                recalculatePayment();
+            });
+        };
+        
+        const handleSavePayment = async () => {
+            const viajeId = document.getElementById('payment-calculator').dataset.viajeId;
+            const { total, desglose } = getPaymentCalculation();
+
+            if (desglose.length === 0) {
+                showAlert('No se han agregado conceptos de pago. Agregue al menos un concepto para guardar.', 'error');
+                return;
+            }
+            try {
+                const { error } = await supabase.from('viajes').update({
+                    pago_total: total,
+                    pago_desglose: desglose,
+                    status: 'Pagado'
+                }).eq('id', viajeId);
+                if (error) throw error;
+
+                showAlert('Pago registrado y viaje archivado con éxito!');
+                document.getElementById('review-modal').classList.add('hidden');
+                await loadAdminViajesData();
+            } catch (err) {
+                showAlert(`Error al guardar el pago: ${err.message}`, 'error');
+                console.error("Save Payment Error:", err);
+            }
+        };
+
+        const loadAdminData = async () => {
+            const selectedTab = document.querySelector('.tab-btn.text-blue-600').dataset.tab;
+            switch(selectedTab) {
+                case 'pendientes': case 'por-pagar': case 'historial': await loadAdminViajesData(); break;
+                case 'flota': await loadAdminFleetData(); break;
+                case 'usuarios': await loadAdminUsersData(); break;
+            }
+        };
+        
+        const loadAdminViajesData = async () => {
+            const containers = {
+                pendientes: document.getElementById('admin-content-pendientes'),
+                porPagar: document.getElementById('admin-content-por-pagar'),
+                historial: document.getElementById('admin-content-historial'),
+            };
+            Object.values(containers).forEach(c => { if(c) c.innerHTML = `<div class="loader mx-auto"></div>`; });
+            
+            try {
+                const { data: viajes, error } = await supabase.from('viajes').select(`*, chofer:chofer_id(full_name), camiones(nombre_identificador), cajas(nombre_identificador)`).order('created_at', { ascending: false });
+                if (error) throw error;
+                
+                const pendientes = viajes.filter(v => v.status === 'Asignado');
+                containers.pendientes.innerHTML = `
+                    <h3 class="text-xl font-semibold mb-4">Viajes Pendientes de Completar</h3>
+                    ${pendientes.length === 0 ? '<p>No hay viajes pendientes.</p>' : `
+                        <div class="overflow-x-auto"><table class="min-w-full bg-white">
+                            <thead class="bg-gray-100"><tr><th class="py-2 px-4 text-left">ID</th><th class="py-2 px-4 text-left">Chofer</th><th class="py-2 px-4 text-left">Unidad</th></tr></thead>
+                            <tbody>${pendientes.map(v => `<tr class="border-b"><td class="py-2 px-4">${v.id}</td><td class="py-2 px-4">${v.chofer.full_name}</td><td class="py-2 px-4">${v.camiones.nombre_identificador} / ${v.cajas.nombre_identificador}</td></tr>`).join('')}</tbody>
+                        </table></div>`}`;
+
+                const porPagar = viajes.filter(v => v.status === 'Completado');
+                containers.porPagar.innerHTML = `
+                    <h3 class="text-xl font-semibold mb-4">Viajes Completados (Pendientes de Pago)</h3>
+                     ${porPagar.length === 0 ? '<p>No hay viajes pendientes de pago.</p>' : `
+                        <div class="overflow-x-auto"><table class="min-w-full bg-white">
+                            <thead class="bg-gray-100"><tr><th class="py-2 px-4 text-left">ID</th><th class="py-2 px-4 text-left">Chofer</th><th class="py-2 px-4 text-left">Comprobante</th><th class="py-2 px-4 text-left">Acciones</th></tr></thead>
+                            <tbody>${porPagar.map(v => `<tr class="border-b"><td class="py-2 px-4">${v.id}</td><td class="py-2 px-4">${v.chofer.full_name}</td><td class="py-2 px-4">${v.recibo_diesel_url ? `<a href="${v.recibo_diesel_url}" target="_blank" class="text-blue-500 hover:underline">Ver</a>` : 'N/A'}</td><td class="py-2 px-4"><button class="review-payment-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded" data-viaje-id="${v.id}">Revisar y Pagar</button></td></tr>`).join('')}</tbody>
+                        </table></div>`}`;
+                
+                const historial = viajes.filter(v => v.status === 'Pagado');
+                containers.historial.innerHTML = `
+                    <h3 class="text-xl font-semibold mb-4">Historial de Viajes Pagados</h3>
+                    ${historial.length === 0 ? '<p>No hay viajes en el historial.</p>' : `
+                        <div class="overflow-x-auto"><table class="min-w-full bg-white">
+                            <thead class="bg-gray-100"><tr><th class="py-2 px-4 text-left">ID</th><th class="py-2 px-4 text-left">Chofer</th><th class="py-2 px-4 text-left">Pago Total</th></tr></thead>
+                            <tbody>${historial.map(v => `<tr class="border-b"><td class="py-2 px-4">${v.id}</td><td class="py-2 px-4">${v.chofer.full_name}</td><td class="py-2 px-4 font-semibold">${v.pago_total ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v.pago_total) : 'N/A'}</td></tr>`).join('')}</tbody>
+                        </table></div>`}`;
+
+            } catch (err) {
+                showAlert(`Error al cargar los viajes: ${err.message}`, 'error');
+                Object.values(containers).forEach(c => c.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`);
+            }
+        };
+
+        const loadAdminFleetData = async () => { 
+            const fleetContainer = document.getElementById('admin-content-flota');
+            fleetContainer.innerHTML = `<div class="loader mx-auto"></div>`;
+            try {
+                const { data: camiones } = await supabase.from('camiones').select('*');
+                const { data: cajas } = await supabase.from('cajas').select('*');
+                fleetContainer.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="text-xl font-semibold mb-4">Camiones</h3>
+                            <form id="admin-add-camion-form" class="flex gap-2 mb-4">
+                                <input type="text" name="nombre" placeholder="Nuevo Camión (ej. C-01)" required class="flex-grow px-3 py-2 border rounded-lg">
+                                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">+</button>
+                            </form>
+                            <div class="space-y-2">${camiones.map(c => `<div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center"><span>${c.nombre_identificador}</span><button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="camiones">Eliminar</button></div>`).join('')}</div>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-4">Cajas</h3>
+                            <form id="admin-add-caja-form" class="flex gap-2 mb-4">
+                                <input type="text" name="nombre" placeholder="Nueva Caja (ej. R-01)" required class="flex-grow px-3 py-2 border rounded-lg">
+                                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">+</button>
+                            </form>
+                            <div class="space-y-2">${cajas.map(c => `<div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center"><span>${c.nombre_identificador}</span><button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="cajas">Eliminar</button></div>`).join('')}</div>
+                        </div>
+                    </div>`;
+            } catch(err) {
+                showAlert(`Error al cargar la flota: ${err.message}`, 'error');
+                fleetContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+        const loadAdminUsersData = async () => { 
+             const usersContainer = document.getElementById('admin-content-usuarios');
+            usersContainer.innerHTML = `<div class="loader mx-auto"></div>`;
+            try {
+                const { data: profiles } = await supabase.from('profiles').select('*');
+                usersContainer.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-xl font-semibold mb-4">Usuarios Activos</h3>
+                        <div class="space-y-2">${profiles.map(u => `
+                            <div class="bg-gray-50 p-3 rounded-lg flex justify-between items-center">
+                                <div>
+                                    <p class="font-semibold">${u.full_name || 'N/A'}</p>
+                                    <p class="text-sm text-gray-500">${u.role || 'N/A'} | ${u.tipo_operador || 'N/A'}</p>
+                                </div>
+                                <button class="delete-user-btn text-red-500 hover:text-red-700" data-user-id="${u.id}">Eliminar</button>
+                            </div>`).join('')}
+                        </div>
+                    </div>
+                    <div>
+                         <h3 class="text-xl font-semibold mb-4">Crear Nuevo Usuario</h3>
+                         <form id="create-user-form" class="bg-gray-50 p-4 rounded-lg space-y-4">
+                            <div><label class="block text-sm">Nombre Completo</label><input type="text" name="fullname" required class="w-full mt-1 p-2 border rounded-md"></div>
+                            <div><label class="block text-sm">Correo Electrónico</label><input type="email" name="email" required class="w-full mt-1 p-2 border rounded-md"></div>
+                            <div><label class="block text-sm">Contraseña</label><input type="password" name="password" required class="w-full mt-1 p-2 border rounded-md"></div>
+                            <div>
+                                <label class="block text-sm">Rol</label>
+                                <select name="role" required class="w-full mt-1 p-2 border rounded-md">
+                                    <option value="Chofer">Chofer</option><option value="Trafico">Tráfico</option><option value="Admin">Admin</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm">Tipo de Operador (Si es Chofer)</label>
+                                <select name="tipo_operador" class="w-full mt-1 p-2 border rounded-md">
+                                    <option value="Local">Local</option><option value="Cruce">Cruce</option><option value="Foráneo Chihuahua">Foráneo Chihuahua</option><option value="Foráneo Pacífico">Foráneo Pacífico</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Crear Usuario</button>
+                         </form>
+                    </div>
+                </div>`;
+            } catch (err) {
+                 showAlert(`Error al cargar usuarios: ${err.message}`, 'error');
+                 usersContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+        const handleFleetAdd = async (event, type) => {
+             const form = event.target;
+             const nombre = form.nombre.value;
+             const { error } = await supabase.from(type).insert({ nombre_identificador: nombre });
+             if (error) { showAlert(`Error: ${error.message}`, 'error'); }
+             else { showAlert('¡Agregado con éxito!'); form.reset(); await loadAdminFleetData(); }
+        };
+        const handleFleetDelete = async (id, type) => {
+            openConfirmModal(`¿Seguro que quieres eliminar este elemento?`, async () => {
+                const { error } = await supabase.from(type).delete().eq('id', id);
+                if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
+                else { showAlert('Elemento eliminado.'); await loadAdminFleetData(); }
+                closeConfirmModal();
+            });
+        };
+        const handleCreateUser = async (event) => {
+             showAlert('La creación de usuarios está deshabilitada en esta demo por seguridad.', 'error');
+        };
+        const handleDeleteUser = async (userId) => {
+            showAlert('La eliminación de usuarios está deshabilitada en esta demo por seguridad.', 'error');
+        };
+        
+        // --- EVENT LISTENERS & INITIALIZATION ---
+        document.getElementById('login-form').addEventListener('submit', handleLogin);
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('button');
+            if(!button) return;
+
+            if(button.id.startsWith('logout-button')) handleLogout();
+            if(button.classList.contains('tab-btn')) {
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('text-blue-600', 'border-blue-600');
+                    btn.classList.add('text-gray-500', 'border-transparent');
+                });
+                button.classList.add('text-blue-600', 'border-blue-600');
+                document.querySelectorAll('.admin-tab-content').forEach(content => content.classList.add('hidden'));
+                document.getElementById(`admin-content-${button.dataset.tab}`).classList.remove('hidden');
+                loadAdminData();
+            }
+            if(button.classList.contains('add-coordenada-btn')) addCoordenadaInput(button.dataset.container);
+            if(button.classList.contains('remove-coordenada-btn')) button.parentElement.remove();
+            if(button.classList.contains('edit-viaje-btn')) openEditViajeModal(button.dataset.viajeId);
+            if(button.classList.contains('close-modal-btn')) button.closest('.fixed').classList.add('hidden');
+            if(button.classList.contains('delete-fleet-btn')) handleFleetDelete(button.dataset.id, button.dataset.type);
+            if(button.classList.contains('delete-user-btn')) handleDeleteUser(button.dataset.userId);
+            if(button.classList.contains('complete-viaje-btn')) openUploadModal(button.dataset.viajeId);
+            if(button.classList.contains('review-payment-btn')) openReviewModal(button.dataset.viajeId);
+        });
+
+        document.addEventListener('submit', async (event) => {
+            try {
+                event.preventDefault();
+                const form = event.target;
+                if (form.id === 'create-viaje-form') await handleCreateViaje(event);
+                if (form.id === 'edit-viaje-form') await handleUpdateViaje(event);
+                if (form.id === 'complete-trip-form') await handleTripCompletion(event);
+                if (form.id === 'admin-add-camion-form') await handleFleetAdd(event, 'camiones');
+                if (form.id === 'admin-add-caja-form') await handleFleetAdd(event, 'cajas');
+                if (form.id === 'create-user-form') await handleCreateUser(event);
+            } catch (err) {
+                showAlert(`Error: ${err.message}`, 'error');
+                console.error("Submit error:", err);
+            }
+        });
+
+        checkSession();
+    </script>
+</body>
+</html>
+
