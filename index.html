@@ -885,8 +885,21 @@
                     <h3 class="text-xl font-semibold mb-4">Historial de Viajes Pagados</h3>
                     ${historial.length === 0 ? '<p>No hay viajes en el historial.</p>' : `
                         <div class="overflow-x-auto"><table class="min-w-full bg-white">
-                            <thead class="bg-gray-100"><tr><th class="py-2 px-4 text-left">ID</th><th class="py-2 px-4 text-left">Chofer</th><th class="py-2 px-4 text-left">Pago Total</th></tr></thead>
-                            <tbody>${historial.map(v => `<tr class="border-b"><td class="py-2 px-4">${v.id}</td><td class="py-2 px-4">${v.chofer.full_name}</td><td class="py-2 px-4 font-semibold">${v.pago_total ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v.pago_total) : 'N/A'}</td></tr>`).join('')}</tbody>
+                            <thead class="bg-gray-100"><tr><th class="py-2 px-4 text-left">ID</th><th class="py-2 px-4 text-left">Chofer</th><th class="py-2 px-4 text-left">Pago Total</th><th class="py-2 px-4 text-left">Desglose</th></tr></thead>
+                            <tbody>${historial.map(v => `
+                                <tr class="border-b">
+                                    <td class="py-2 px-4 align-top">${v.id}</td>
+                                    <td class="py-2 px-4 align-top">${v.chofer.full_name}</td>
+                                    <td class="py-2 px-4 align-top font-semibold">${v.pago_total ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v.pago_total) : 'N/A'}</td>
+                                    <td class="py-2 px-4 text-xs text-gray-600">
+                                        ${v.pago_desglose && v.pago_desglose.length > 0 ? `
+                                            <ul class="space-y-1">
+                                                ${v.pago_desglose.map(item => `<li>${item.concepto}: <strong>${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.monto)}</strong></li>`).join('')}
+                                            </ul>
+                                        ` : '<span>N/A</span>'}
+                                    </td>
+                                </tr>`).join('')}
+                            </tbody>
                         </table></div>`}`;
 
             } catch (err) {
@@ -987,10 +1000,89 @@
             });
         };
         const handleCreateUser = async (event) => {
-             showAlert('La creación de usuarios está deshabilitada en esta demo por seguridad.', 'error');
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const fullName = formData.get('fullname');
+            const email = formData.get('email');
+            const password = formData.get('password');
+            const role = formData.get('role');
+            const tipo_operador = role === 'Chofer' ? formData.get('tipo_operador') : null;
+
+            // This is a workaround for client-side admin user creation.
+            // A serverless function is the recommended approach, but for this self-contained demo:
+            // 1. We get the current admin session.
+            // 2. We sign up the new user (which signs out the admin).
+            // 3. We insert the new user's profile, assuming the admin role has insert permissions.
+            // 4. We restore the admin session.
+
+            const { data: { session: adminSession }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError || !adminSession) {
+                showAlert('Error de autenticación. Por favor, inicie sesión de nuevo.', 'error');
+                return;
+            }
+
+            try {
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+
+                if (signUpError) throw signUpError;
+                if (!signUpData.user) throw new Error('No se pudo crear el usuario en el sistema de autenticación.');
+
+                const newUserId = signUpData.user.id;
+                const { error: profileError } = await supabase.from('profiles').insert({
+                    id: newUserId,
+                    full_name: fullName,
+                    role: role,
+                    tipo_operador: tipo_operador
+                });
+
+                if (profileError) {
+                    // If profile creation fails, the auth user remains. A cleanup function on the server would be needed for a production app.
+                    console.error("Error al crear perfil. El usuario de autenticación existe pero no tiene perfil en la app.");
+                    throw profileError;
+                }
+
+                showAlert('¡Usuario creado con éxito!');
+                form.reset();
+                await loadAdminUsersData();
+
+            } catch (err) {
+                showAlert(`Error al crear usuario: ${err.message}`, 'error');
+                console.error("Create User Error:", err);
+            } finally {
+                // Restore the admin session
+                const { error: setSessionError } = await supabase.auth.setSession({
+                    access_token: adminSession.access_token,
+                    refresh_token: adminSession.refresh_token,
+                });
+                if(setSessionError) {
+                    showAlert('Se cerró la sesión de administrador. Por favor, inicie sesión de nuevo.', 'error');
+                    handleLogout();
+                }
+            }
         };
+
         const handleDeleteUser = async (userId) => {
-            showAlert('La eliminación de usuarios está deshabilitada en esta demo por seguridad.', 'error');
+            if (userId === currentUser.id) {
+                showAlert('No puedes eliminar tu propia cuenta.', 'error');
+                return;
+            }
+            // Note: This only deletes the user's profile from the public table, which prevents app access.
+            // The user will still exist in the main Supabase Auth system. Deleting from there
+            // requires admin privileges not exposed to the client-side for security reasons, and should be
+            // handled via a secure server-side function in a production environment.
+            openConfirmModal(`¿Seguro que quieres eliminar el perfil de este usuario? Perderá el acceso a la aplicación.`, async () => {
+                try {
+                    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+                    if (error) throw error;
+                    showAlert('Perfil de usuario eliminado con éxito.');
+                    await loadAdminUsersData();
+                } catch(err) {
+                     showAlert(`Error al eliminar el perfil del usuario: ${err.message}`, 'error');
+                } finally {
+                    closeConfirmModal();
+                }
+            });
         };
         
         // --- EVENT LISTENERS & INITIALIZATION ---
@@ -1040,3 +1132,4 @@
     </script>
 </body>
 </html>
+
