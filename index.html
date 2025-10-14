@@ -313,15 +313,15 @@
         };
         
         // --- TRAFICO LOGIC ---
-        const addCoordenadaInput = (containerId, data = { desc: '', date: '' }) => {
+        const addCoordenadaInput = (containerId, data = { descripcion: '', fecha_entrega: '' }) => {
             const container = document.getElementById(containerId);
             if(!container) return;
             const count = container.children.length;
             const div = document.createElement('div');
             div.className = 'grid grid-cols-11 gap-2 items-center';
             div.innerHTML = `
-                <div class="col-span-6"><input type="text" name="coordenada_desc" required class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Descripción ${count + 1}" value="${data.desc}"></div>
-                <div class="col-span-4"><input type="date" name="coordenada_date" required class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${data.date}"></div>
+                <div class="col-span-6"><input type="text" name="coordenada_desc" required class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Descripción ${count + 1}" value="${data.descripcion}"></div>
+                <div class="col-span-4"><input type="date" name="coordenada_date" required class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${data.fecha_entrega}"></div>
                 <button type="button" class="remove-coordenada-btn text-red-500 hover:text-red-700 font-bold col-span-1 text-lg">X</button>
             `;
             container.appendChild(div);
@@ -376,9 +376,142 @@
                     <div><button class="edit-viaje-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg" data-viaje-id="${v.id}">Editar</button></div>
                 </div>`).join('');
         };
-        const openEditViajeModal = async (viajeId) => { /* ... */ };
-        const handleCreateViaje = async (event) => { /* ... */ };
-        const handleUpdateViaje = async (event) => { /* ... */ };
+        const openEditViajeModal = async (viajeId) => {
+            const modal = document.getElementById('edit-viaje-modal');
+            modal.innerHTML = `<div class="bg-white p-8 rounded-xl shadow-md w-full max-w-2xl m-auto"><div class="loader mx-auto"></div></div>`;
+            modal.classList.remove('hidden');
+
+            try {
+                const { data: viaje, error: viajeError } = await supabase.from('viajes').select(`*, coordenadas(*)`).eq('id', viajeId).single();
+                if(viajeError) throw viajeError;
+
+                const { data: choferes } = await supabase.from('profiles').select('id, full_name').eq('role', 'Chofer');
+                const { data: camiones } = await supabase.from('camiones').select('id, nombre_identificador');
+                const { data: cajas } = await supabase.from('cajas').select('id, nombre_identificador');
+                
+                modal.innerHTML = `
+                <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-2xl m-auto max-h-[90vh] flex flex-col">
+                    <h3 class="text-xl font-semibold mb-6 flex-shrink-0">Editar Viaje #${viajeId}</h3>
+                    <form id="edit-viaje-form" class="space-y-4 flex-grow overflow-y-auto pr-4 -mr-4" data-viaje-id="${viajeId}">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div><label class="block text-sm font-medium">Chofer</label><select name="chofer" required class="mt-1 block w-full border border-gray-300 rounded-md p-2">${choferes.map(c=>`<option value="${c.id}" ${c.id === viaje.chofer_id ? 'selected' : ''}>${c.full_name}</option>`).join('')}</select></div>
+                            <div><label class="block text-sm font-medium">Camión</label><select name="camion" required class="mt-1 block w-full border border-gray-300 rounded-md p-2">${camiones.map(c=>`<option value="${c.id}" ${c.id === viaje.camion_id ? 'selected' : ''}>${c.nombre_identificador}</option>`).join('')}</select></div>
+                            <div><label class="block text-sm font-medium">Caja</label><select name="caja" required class="mt-1 block w-full border border-gray-300 rounded-md p-2">${cajas.map(c=>`<option value="${c.id}" ${c.id === viaje.caja_id ? 'selected' : ''}>${c.nombre_identificador}</option>`).join('')}</select></div>
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-medium">Ruta</h4>
+                            <div id="coordenadas-container-edit" class="mt-2 space-y-3"></div>
+                            <button type="button" class="add-coordenada-btn mt-2 text-sm bg-gray-200 hover:bg-gray-300 font-semibold py-1 px-3 rounded-lg" data-container="coordenadas-container-edit">+ Agregar Parada</button>
+                        </div>
+                         <div class="flex-shrink-0 pt-6 flex justify-end gap-4 border-t">
+                            <button type="button" class="close-modal-btn bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                            <button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Cambios</button>
+                        </div>
+                    </form>
+                </div>
+                `;
+
+                const coordenadasContainer = document.getElementById('coordenadas-container-edit');
+                if (viaje.coordenadas && viaje.coordenadas.length > 0) {
+                    viaje.coordenadas.sort((a,b) => a.orden - b.orden).forEach(c => addCoordenadaInput('coordenadas-container-edit', c));
+                } else {
+                     addCoordenadaInput('coordenadas-container-edit');
+                }
+
+            } catch (err) {
+                showAlert(`Error al cargar datos para editar: ${err.message}`, 'error');
+                modal.classList.add('hidden');
+            }
+        };
+        const handleCreateViaje = async (event) => {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+
+            const viajeData = {
+                chofer_id: formData.get('chofer'),
+                camion_id: formData.get('camion'),
+                caja_id: formData.get('caja'),
+                status: 'Asignado',
+            };
+            
+            const coordenadasNodes = form.querySelectorAll('#coordenadas-container-create > div');
+            if(coordenadasNodes.length === 0) {
+                showAlert('Debe agregar al menos una parada a la ruta.', 'error');
+                return;
+            }
+
+            try {
+                // 1. Insertar el viaje
+                const { data: newViaje, error: viajeError } = await supabase.from('viajes').insert(viajeData).select().single();
+                if (viajeError) throw viajeError;
+
+                // 2. Preparar y insertar las coordenadas
+                const coordenadasData = Array.from(coordenadasNodes).map((node, index) => ({
+                    viaje_id: newViaje.id,
+                    orden: index + 1,
+                    descripcion: node.querySelector('[name="coordenada_desc"]').value,
+                    fecha_entrega: node.querySelector('[name="coordenada_date"]').value,
+                }));
+
+                const { error: coordError } = await supabase.from('coordenadas').insert(coordenadasData);
+                if (coordError) throw coordError;
+
+                showAlert('¡Viaje asignado con éxito!');
+                form.reset();
+                document.getElementById('coordenadas-container-create').innerHTML = '';
+                addCoordenadaInput('coordenadas-container-create');
+                await loadAssignedViajes();
+
+            } catch(err) {
+                showAlert(`Error al crear el viaje: ${err.message}`, 'error');
+            }
+        };
+        const handleUpdateViaje = async (event) => {
+            event.preventDefault();
+            const form = event.target;
+            const viajeId = form.dataset.viajeId;
+            const formData = new FormData(form);
+            
+            const viajeUpdateData = {
+                chofer_id: formData.get('chofer'),
+                camion_id: formData.get('camion'),
+                caja_id: formData.get('caja'),
+            };
+
+            const coordenadasNodes = form.querySelectorAll('#coordenadas-container-edit > div');
+             if(coordenadasNodes.length === 0) {
+                showAlert('Debe agregar al menos una parada a la ruta.', 'error');
+                return;
+            }
+
+            try {
+                // 1. Actualizar el viaje
+                const { error: viajeError } = await supabase.from('viajes').update(viajeUpdateData).eq('id', viajeId);
+                if (viajeError) throw viajeError;
+
+                // 2. Borrar coordenadas antiguas
+                const { error: deleteError } = await supabase.from('coordenadas').delete().eq('viaje_id', viajeId);
+                if(deleteError) throw deleteError;
+                
+                // 3. Insertar las nuevas coordenadas
+                 const coordenadasData = Array.from(coordenadasNodes).map((node, index) => ({
+                    viaje_id: viajeId,
+                    orden: index + 1,
+                    descripcion: node.querySelector('[name="coordenada_desc"]').value,
+                    fecha_entrega: node.querySelector('[name="coordenada_date"]').value,
+                }));
+                const { error: coordError } = await supabase.from('coordenadas').insert(coordenadasData);
+                if (coordError) throw coordError;
+
+                showAlert('¡Viaje actualizado con éxito!');
+                document.getElementById('edit-viaje-modal').classList.add('hidden');
+                await loadAssignedViajes();
+
+            } catch (err) {
+                showAlert(`Error al actualizar el viaje: ${err.message}`, 'error');
+            }
+        };
 
         // --- ADMIN LOGIC ---
         const openConfirmModal = (message, onConfirm) => {
@@ -433,7 +566,7 @@
                         <!-- Bono Diesel -->
                         <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Bono Diésel (Sábado/Festivo)</h4>
                          <div class="grid grid-cols-2 gap-4">
-                           <div>
+                            <div>
                                 <label class="block text-sm font-medium">Decimales del Día</label>
                                 <select id="bono-diesel-decimal" class="payment-input mt-1 block w-full p-2 border rounded-md">
                                      <option value="0">No Aplica</option>
@@ -486,7 +619,7 @@
                                 </label>`).join('')}
                         </div>
                     `;
-                     break;
+                       break;
                  case 'Foráneo Pacífico':
                     calculatorHtml = `
                          <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago por Diésel</h4>
@@ -506,11 +639,11 @@
                 case 'Local':
                 default:
                      calculatorHtml = `
-                        <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago Principal</h4>
-                        <div>
+                         <h4 class="text-lg font-semibold text-gray-800 mb-2">Pago Principal</h4>
+                         <div>
                             <label class="block text-sm font-medium">Valor Decimal del Viaje</label>
                             <select id="pago-decimal" class="payment-input mt-1 block w-full p-2 border rounded-md"><option value="0">Seleccionar...</option>${Object.keys(PAYMENT_RULES.PAGO_DECIMALES).map(v => `<option value="${v}">${v}</option>`).join('')}</select>
-                        </div>
+                         </div>
                          <h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Estancias</h4>
                          <div class="grid grid-cols-2 gap-4">
                              <div><label class="block text-sm font-medium">Horas en Base</label><input type="number" id="estancia-base" min="0" class="payment-input mt-1 w-full p-2 border rounded-md" placeholder="0"></div>
@@ -638,8 +771,8 @@
                  const concepto = row.querySelector('[name=desglose_concepto]').value;
                  const monto = parseFloat(row.querySelector('[name=desglose_monto]').value);
                  if(concepto && !isNaN(monto)) {
-                     desglose.push({ concepto: `Ajuste: ${concepto}`, monto: monto });
-                     total += monto;
+                      desglose.push({ concepto: `Ajuste: ${concepto}`, monto: monto });
+                      total += monto;
                  }
             });
 
@@ -814,22 +947,22 @@
                     <div>
                          <h3 class="text-xl font-semibold mb-4">Crear Nuevo Usuario</h3>
                          <form id="create-user-form" class="bg-gray-50 p-4 rounded-lg space-y-4">
-                            <div><label class="block text-sm">Nombre Completo</label><input type="text" name="fullname" required class="w-full mt-1 p-2 border rounded-md"></div>
-                            <div><label class="block text-sm">Correo Electrónico</label><input type="email" name="email" required class="w-full mt-1 p-2 border rounded-md"></div>
-                            <div><label class="block text-sm">Contraseña</label><input type="password" name="password" required class="w-full mt-1 p-2 border rounded-md"></div>
-                            <div>
+                             <div><label class="block text-sm">Nombre Completo</label><input type="text" name="fullname" required class="w-full mt-1 p-2 border rounded-md"></div>
+                             <div><label class="block text-sm">Correo Electrónico</label><input type="email" name="email" required class="w-full mt-1 p-2 border rounded-md"></div>
+                             <div><label class="block text-sm">Contraseña</label><input type="password" name="password" required class="w-full mt-1 p-2 border rounded-md"></div>
+                             <div>
                                 <label class="block text-sm">Rol</label>
                                 <select name="role" required class="w-full mt-1 p-2 border rounded-md">
                                     <option value="Chofer">Chofer</option><option value="Trafico">Tráfico</option><option value="Admin">Admin</option>
                                 </select>
-                            </div>
-                            <div>
+                             </div>
+                             <div>
                                 <label class="block text-sm">Tipo de Operador (Si es Chofer)</label>
                                 <select name="tipo_operador" class="w-full mt-1 p-2 border rounded-md">
                                     <option value="Local">Local</option><option value="Cruce">Cruce</option><option value="Foráneo Chihuahua">Foráneo Chihuahua</option><option value="Foráneo Pacífico">Foráneo Pacífico</option>
                                 </select>
-                            </div>
-                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Crear Usuario</button>
+                             </div>
+                             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Crear Usuario</button>
                          </form>
                     </div>
                 </div>`;
@@ -907,4 +1040,3 @@
     </script>
 </body>
 </html>
-
