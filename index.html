@@ -33,6 +33,7 @@
 <body class="bg-gray-100">
 
     <div id="app" class="min-h-screen flex flex-col items-center justify-center p-4">
+        <!-- ... Vistas de Carga, Login, Chofer, Tráfico ... -->
         <div id="loading-view">
             <div class="loader"></div>
             <p class="mt-4 text-gray-600">Cargando aplicación...</p>
@@ -79,23 +80,28 @@
             </div>
         </div>
 
+        <!-- VISTA DE ADMINISTRADOR (MODIFICADA) -->
         <div id="administrador-view" class="hidden w-full max-w-7xl">
             <div class="bg-white p-8 rounded-xl shadow-md">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">Panel de Administración</h2>
                     <button id="logout-button-admin" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
                 </div>
+                 <!-- Pestañas Modificadas -->
                  <div class="border-b border-gray-200">
                     <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
                         <button data-tab="viajes" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-blue-600 border-blue-600">Monitor de Viajes</button>
-                        <button data-tab="flota" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Flota</button>
+                        <button data-tab="camiones" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Camiones</button>
+                        <button data-tab="cajas" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Cajas</button>
                         <button data-tab="usuarios" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Usuarios</button>
                         <button data-tab="reportes" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Reportes</button>
                     </nav>
                 </div>
 
+                <!-- Contenedores de Pestañas Modificados -->
                 <div id="admin-content-viajes" class="admin-tab-content mt-6"></div>
-                <div id="admin-content-flota" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-camiones" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-cajas" class="admin-tab-content hidden mt-6"></div>
                 <div id="admin-content-usuarios" class="admin-tab-content hidden mt-6"></div>
                 <div id="admin-content-reportes" class="admin-tab-content hidden mt-6"></div>
             </div>
@@ -439,6 +445,45 @@
         };
 
         // --- ADMIN LOGIC ---
+
+        // Reemplazada: Función de filtro para usar dropdowns
+        const filterCajas = () => {
+            // 1. Obtener valores de los 3 dropdowns.
+            const filterTipo = document.getElementById('caja-filter-tipo')?.value || '';
+            const filterPropiedad = document.getElementById('caja-filter-propiedad')?.value || '';
+            const filterPropietario = document.getElementById('caja-filter-propietario')?.value || '';
+
+            // 2. Obtener el contenedor específico de la lista
+            const container = document.getElementById('cajas-list-container');
+            if (!container) return;
+            
+            // 3. Obtener las tarjetas DENTRO de ese contenedor
+            const cards = container.getElementsByClassName('caja-card');
+            
+            // 4. Iterar y verificar
+            for (let i = 0; i < cards.length; i++) {
+                const card = cards[i];
+                
+                // 5. Leer datos desde data-attributes
+                const cardTipo = card.dataset.tipo;
+                const cardPropiedad = card.dataset.propiedad;
+                const cardPropietario = card.dataset.propietario;
+
+                // 6. Lógica de match (AND)
+                // Si el filtro está vacío ("Todos"), es un match.
+                // Si no está vacío, compara con el data-attribute.
+                const matchTipo = (filterTipo === '') || (cardTipo === filterTipo);
+                const matchPropiedad = (filterPropiedad === '') || (cardPropiedad === filterPropiedad);
+                const matchPropietario = (filterPropietario === '') || (cardPropietario === filterPropietario);
+
+                if (matchTipo && matchPropiedad && matchPropietario) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            }
+        };
+
         const openConfirmModal = (message, onConfirm) => {
             const modal = document.getElementById('confirm-modal');
             modal.innerHTML = `
@@ -472,11 +517,13 @@
             modal.classList.remove('hidden');
         };
 
+        // Modificado: Carga datos de la pestaña activa
         const loadAdminData = async () => {
             const selectedTab = document.querySelector('.tab-btn.text-blue-600').dataset.tab;
             switch(selectedTab) {
                 case 'viajes': await loadAdminViajesData(); break;
-                case 'flota': await loadAdminFleetData(); break;
+                case 'camiones': await loadAdminCamionesData(); break;
+                case 'cajas': await loadAdminCajasData(); break;
                 case 'usuarios': await loadAdminUsersData(); break;
                 case 'reportes': await loadAdminReportsData(); break;
             }
@@ -531,36 +578,152 @@
             }
         };
 
-        const loadAdminFleetData = async () => { 
-            const fleetContainer = document.getElementById('admin-content-flota');
-            fleetContainer.innerHTML = `<div class="loader mx-auto"></div>`;
+        // Modificado: Renombrado y simplificado solo para camiones
+        const loadAdminCamionesData = async () => { 
+            const camionesContainer = document.getElementById('admin-content-camiones');
+            camionesContainer.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
                 const { data: camiones } = await supabase.from('camiones').select('*');
-                const { data: cajas } = await supabase.from('cajas').select('*');
-                fleetContainer.innerHTML = `
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                            <h3 class="text-xl font-semibold mb-4">Camiones</h3>
-                            <form id="admin-add-camion-form" class="flex gap-2 mb-4">
-                                <input type="text" name="nombre" placeholder="Nuevo Camión (ej. C-01)" required class="flex-grow px-3 py-2 border rounded-lg">
-                                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">+</button>
-                            </form>
-                            <div class="space-y-2">${camiones.map(c => `<div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center"><span>${c.nombre_identificador}</span><button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="camiones">Eliminar</button></div>`).join('')}</div>
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-semibold mb-4">Cajas</h3>
-                            <form id="admin-add-caja-form" class="flex gap-2 mb-4">
-                                <input type="text" name="nombre" placeholder="Nueva Caja (ej. R-01)" required class="flex-grow px-3 py-2 border rounded-lg">
-                                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">+</button>
-                            </form>
-                            <div class="space-y-2">${cajas.map(c => `<div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center"><span>${c.nombre_identificador}</span><button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="cajas">Eliminar</button></div>`).join('')}</div>
+                
+                camionesContainer.innerHTML = `
+                    <div>
+                        <h3 class="text-xl font-semibold mb-4">Camiones</h3>
+                        <form id="admin-add-camion-form" class="flex gap-2 mb-4">
+                            <input type="text" name="nombre" placeholder="Nuevo Camión (ej. C-01)" required class="flex-grow px-3 py-2 border rounded-lg">
+                            <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">+</button>
+                        </form>
+                        <div class="space-y-2 max-h-[60vh] overflow-y-auto pr-2">${camiones.map(c => `
+                            <div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center">
+                                <span>${c.nombre_identificador}</span>
+                                <button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="camiones">Eliminar</button>
+                            </div>`).join('')}
                         </div>
                     </div>`;
             } catch(err) {
-                showAlert(`Error al cargar la flota: ${err.message}`, 'error');
-                fleetContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+                showAlert(`Error al cargar camiones: ${err.message}`, 'error');
+                camionesContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
             }
         };
+
+        // Nuevo: Carga los datos y el formulario para Cajas
+        const loadAdminCajasData = async () => {
+            const cajasContainer = document.getElementById('admin-content-cajas');
+            cajasContainer.innerHTML = `<div class="loader mx-auto"></div>`;
+            try {
+                const { data: cajas } = await supabase.from('cajas').select('*').order('nombre_identificador', { ascending: true });
+                
+                // NUEVO: Extraer valores únicos para filtros
+                const tipos = [...new Set(cajas.map(c => c.tipo).filter(Boolean))].sort();
+                const propiedades = [...new Set(cajas.map(c => c.propiedad).filter(Boolean))].sort();
+                const propietarios = [...new Set(cajas.map(c => c.propietario).filter(Boolean))].sort();
+
+                cajasContainer.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="text-xl font-semibold mb-4">Agregar Nueva Caja</h3>
+                            <form id="admin-add-caja-form" class="bg-gray-50 p-4 rounded-lg space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                                <div><label class="block text-sm">Nombre Identificador</label><input type="text" name="nombre_identificador" required class="w-full mt-1 p-2 border rounded-md"></div>
+                                <div><label class="block text-sm">Placa</label><input type="text" name="placa" required class="w-full mt-1 p-2 border rounded-md"></div>
+                                <div><label class="block text-sm">Tipo</label><input type="text" name="tipo" required class="w-full mt-1 p-2 border rounded-md"></div>
+                                <div><label class="block text-sm">Medida</label><input type="text" name="medida" required class="w-full mt-1 p-2 border rounded-md"></div>
+                                <div><label class="block text-sm">Núm. Llantas</label><input type="text" name="num_llantas" required class="w-full mt-1 p-2 border rounded-md"></div>
+                                <div><label class="block text-sm">Propietario</label><input type="text" name="propietario" required class="w-full mt-1 p-2 border rounded-md"></div>
+                                
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-sm">Origen</label>
+                                        <select name="origen" required class="w-full mt-1 p-2 border rounded-md">
+                                            <option value="Nacional">Nacional</option>
+                                            <option value="Extranjero">Extranjero</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm">Propiedad</label>
+                                        <select name="propiedad" required class="w-full mt-1 p-2 border rounded-md">
+                                            <option value="Propio">Propio</option>
+                                            <option value="Ajeno">Ajeno</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm">Estatus</label>
+                                        <select name="estatus" required class="w-full mt-1 p-2 border rounded-md">
+                                            <option value="Activo">Activo</option>
+                                            <option value="Inactivo">Inactivo</option>
+                                            <option value="Mantenimiento">Mantenimiento</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Agregar Caja</button>
+                            </form>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-4">Cajas (Remolques) Existentes</h3>
+                            
+                            <!-- Filtros Reemplazados -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-lg border">
+                                <div>
+                                    <label for="caja-filter-tipo" class="block text-sm font-medium text-gray-700">Tipo</label>
+                                    <select id="caja-filter-tipo" class="caja-filter-select mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="">Todos</option>
+                                        ${tipos.map(t => `<option value="${t}">${t}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="caja-filter-propiedad" class="block text-sm font-medium text-gray-700">Propiedad</label>
+                                    <select id="caja-filter-propiedad" class="caja-filter-select mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="">Todas</option>
+                                        ${propiedades.map(p => `<option value="${p}">${p}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="caja-filter-propietario" class="block text-sm font-medium text-gray-700">Propietario</label>
+                                    <select id="caja-filter-propietario" class="caja-filter-select mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="">Todos</option>
+                                        ${propietarios.map(p => `<option value="${p}">${p}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Contenedor de la lista modificado -->
+                            <div id="cajas-list-container" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                            ${cajas.length === 0 ? '<p>No hay cajas registradas.</p>' :
+                            cajas.map(c => `
+                                <!-- Se agregaron data-attributes -->
+                                <div class="caja-card bg-gray-50 p-3 rounded-lg border" 
+                                     data-tipo="${c.tipo || ''}" 
+                                     data-propiedad="${c.propiedad || ''}" 
+                                     data-propietario="${c.propietario || ''}">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-semibold text-base">${c.nombre_identificador}</span>
+                                        <button class="delete-fleet-btn text-red-500 hover:text-red-700 text-sm" data-id="${c.id}" data-type="cajas">Eliminar</button>
+                                    </div>
+                                    <div class="mt-2 text-sm text-gray-700 grid grid-cols-2 gap-x-4 gap-y-1">
+                                        <p><strong>Placa:</strong> ${c.placa || 'N/A'}</p>
+                                        <p><strong>Tipo:</strong> ${c.tipo || 'N/A'}</p>
+                                        <p><strong>Medida:</strong> ${c.medida || 'N/A'}</p>
+                                        <p><strong>Estatus:</strong> <span class="font-medium ${c.estatus === 'Activo' ? 'text-green-600' : 'text-gray-500'}">${c.estatus || 'N/A'}</span></p>
+                                        <p><strong>Propiedad:</strong> ${c.propiedad || 'N/A'}</p>
+                                        <p><strong>Propietario:</strong> ${c.propietario || 'N/A'}</p>
+                                    </div>
+                                </div>
+                                `).join('')
+                            }
+                            </div>
+                        </div>
+                    </div>`;
+                
+                // Reemplazado: Agregar event listener para los dropdowns
+                const filterSelects = cajasContainer.querySelectorAll('.caja-filter-select');
+                filterSelects.forEach(select => {
+                    select.addEventListener('change', filterCajas);
+                });
+
+            } catch(err) {
+                showAlert(`Error al cargar las cajas: ${err.message}`, 'error');
+                cajasContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+
         const loadAdminUsersData = async () => { 
              const usersContainer = document.getElementById('admin-content-usuarios');
             usersContainer.innerHTML = `<div class="loader mx-auto"></div>`;
@@ -672,18 +835,64 @@
             } catch (err) { showAlert(`Error al generar el reporte: ${err.message}`, 'error'); }
         };
 
-        const handleFleetAdd = async (event, type) => {
+        // Modificado: Renombrado
+        const handleCamionAdd = async (event) => {
              const form = event.target;
              const nombre = form.nombre.value;
-             const { error } = await supabase.from(type).insert({ nombre_identificador: nombre });
+             const { error } = await supabase.from('camiones').insert({ nombre_identificador: nombre });
              if (error) { showAlert(`Error: ${error.message}`, 'error'); }
-             else { showAlert('¡Agregado con éxito!'); form.reset(); await loadAdminFleetData(); }
+             else { showAlert('¡Camión agregado con éxito!'); form.reset(); await loadAdminCamionesData(); }
         };
+
+        // Nuevo: Maneja el formulario de agregar caja
+        const handleCajaAdd = async (event) => {
+            const form = event.target;
+            try {
+                const formData = new FormData(form);
+                const newCaja = {
+                    nombre_identificador: formData.get('nombre_identificador'),
+                    placa: formData.get('placa'),
+                    tipo: formData.get('tipo'),
+                    medida: formData.get('medida'),
+                    num_llantas: formData.get('num_llantas'),
+                    propietario: formData.get('propietario'),
+                    origen: formData.get('origen'),
+                    propiedad: formData.get('propiedad'),
+                    estatus: formData.get('estatus'),
+                };
+                
+                // Verificación manual (aunque 'required' ayuda)
+                for (const key in newCaja) {
+                    if (!newCaja[key]) {
+                        throw new Error(`El campo '${key.replace('_', ' ')}' es obligatorio.`);
+                    }
+                }
+                
+                const { error } = await supabase.from('cajas').insert(newCaja);
+                if (error) throw error;
+                
+                showAlert('¡Caja agregada con éxito!');
+                form.reset();
+                await loadAdminCajasData();
+
+            } catch (err) {
+                showAlert(`Error al agregar la caja: ${err.message}`, 'error');
+            }
+        };
+
+        // Modificado: Recarga los datos de la pestaña correcta
         const handleFleetDelete = async (id, type) => {
             openConfirmModal(`¿Seguro que quieres eliminar este elemento?`, async () => {
                 const { error } = await supabase.from(type).delete().eq('id', id);
                 if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
-                else { showAlert('Elemento eliminado.'); await loadAdminFleetData(); }
+                else { 
+                    showAlert('Elemento eliminado.'); 
+                    if (type === 'camiones') {
+                        await loadAdminCamionesData();
+                    } else if (type === 'cajas') {
+                        await loadAdminCajasData();
+                    }
+                }
                 closeConfirmModal();
             });
         };
@@ -753,6 +962,7 @@
             }
         });
 
+        // Modificado: Llama a las nuevas funciones de submit
         document.addEventListener('submit', async (event) => {
             try {
                 event.preventDefault();
@@ -760,8 +970,8 @@
                 if (form.id === 'create-viaje-form') await handleCreateViaje(event);
                 if (form.id === 'edit-viaje-form') await handleUpdateViaje(event);
                 if (form.id === 'complete-trip-form') await handleTripCompletion(event);
-                if (form.id === 'admin-add-camion-form') await handleFleetAdd(event, 'camiones');
-                if (form.id === 'admin-add-caja-form') await handleFleetAdd(event, 'cajas');
+                if (form.id === 'admin-add-camion-form') await handleCamionAdd(event);
+                if (form.id === 'admin-add-caja-form') await handleCajaAdd(event);
                 if (form.id === 'create-user-form') await handleCreateUser(event);
             } catch (err) {
                 showAlert(`Error: ${err.message}`, 'error');
@@ -773,4 +983,7 @@
     </script>
 </body>
 </html>
+
+
+
 
