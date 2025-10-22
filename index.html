@@ -113,6 +113,8 @@
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4"></div>
     <div id="edit-viaje-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
     <div id="view-route-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"></div>
+    <!-- NUEVO MODAL PARA EDITAR CAJA -->
+    <div id="edit-caja-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
 
     <script type="module">
         // --- SUPABASE & APP CONFIG ---
@@ -461,6 +463,7 @@
             const cards = container.getElementsByClassName('caja-card');
             
             // 4. Iterar y verificar
+            let visibleCount = 0; // Contador de visibles
             for (let i = 0; i < cards.length; i++) {
                 const card = cards[i];
                 
@@ -478,9 +481,17 @@
 
                 if (matchTipo && matchPropiedad && matchPropietario) {
                     card.style.display = 'block';
+                    visibleCount++; // Incrementar contador
                 } else {
                     card.style.display = 'none';
                 }
+            }
+
+            // NUEVO: Actualizar leyenda
+            const legend = document.getElementById('caja-filter-legend');
+            if (legend) {
+                const totalCount = legend.dataset.totalCount;
+                legend.textContent = `Mostrando ${visibleCount} de ${totalCount} cajas`;
             }
         };
 
@@ -610,12 +621,35 @@
             const cajasContainer = document.getElementById('admin-content-cajas');
             cajasContainer.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
-                const { data: cajas } = await supabase.from('cajas').select('*').order('nombre_identificador', { ascending: true });
+                // MODIFICADO: Bucle para obtener todos los registros (paginación)
+                let allCajas = [];
+                let rangeStart = 0;
+                const rangeSize = 1000; // Tamaño del lote
+                let hasMore = true;
+
+                while(hasMore) {
+                    const { data: cajasLote, error } = await supabase
+                        .from('cajas')
+                        .select('*')
+                        .order('nombre_identificador', { ascending: true })
+                        .range(rangeStart, rangeStart + rangeSize - 1);
+
+                    if (error) throw error;
+                    
+                    allCajas = allCajas.concat(cajasLote);
+                    
+                    if (cajasLote.length < rangeSize) {
+                        hasMore = false;
+                    } else {
+                        rangeStart += rangeSize;
+                    }
+                }
+                // FIN del bucle. 'allCajas' tiene todo.
                 
-                // NUEVO: Extraer valores únicos para filtros
-                const tipos = [...new Set(cajas.map(c => c.tipo).filter(Boolean))].sort();
-                const propiedades = [...new Set(cajas.map(c => c.propiedad).filter(Boolean))].sort();
-                const propietarios = [...new Set(cajas.map(c => c.propietario).filter(Boolean))].sort();
+                // NUEVO: Extraer valores únicos para filtros (usando 'allCajas')
+                const tipos = [...new Set(allCajas.map(c => c.tipo).filter(Boolean))].sort();
+                const propiedades = [...new Set(allCajas.map(c => c.propiedad).filter(Boolean))].sort();
+                const propietarios = [...new Set(allCajas.map(c => c.propietario).filter(Boolean))].sort();
 
                 cajasContainer.innerHTML = `
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -672,7 +706,8 @@
                                     <label for="caja-filter-propiedad" class="block text-sm font-medium text-gray-700">Propiedad</label>
                                     <select id="caja-filter-propiedad" class="caja-filter-select mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                                         <option value="">Todas</option>
-                                        ${propiedades.map(p => `<option value="${p}">${p}</option>`).join('')}
+                                        <!-- MODIFICADO: Añadir 'selected' si el valor es 'Propio' -->
+                                        ${propiedades.map(p => `<option value="${p}" ${p === 'Propio' ? 'selected' : ''}>${p}</option>`).join('')}
                                     </select>
                                 </div>
                                 <div>
@@ -684,10 +719,15 @@
                                 </div>
                             </div>
 
-                            <!-- Contenedor de la lista modificado -->
-                            <div id="cajas-list-container" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-                            ${cajas.length === 0 ? '<p>No hay cajas registradas.</p>' :
-                            cajas.map(c => `
+                            <!-- NUEVA LEYENDA (usa allCajas.length) -->
+                            <div id="caja-filter-legend" class="text-sm text-gray-600 mb-4" data-total-count="${allCajas.length}">
+                                Mostrando ${allCajas.length} de ${allCajas.length} cajas
+                            </div>
+
+                            <!-- Contenedor de la lista modificado (altura ajustada) -->
+                            <div id="cajas-list-container" class="space-y-3 max-h-[55vh] overflow-y-auto pr-2">
+                            ${allCajas.length === 0 ? '<p>No hay cajas registradas.</p>' :
+                            allCajas.map(c => `
                                 <!-- Se agregaron data-attributes -->
                                 <div class="caja-card bg-gray-50 p-3 rounded-lg border" 
                                      data-tipo="${c.tipo || ''}" 
@@ -695,7 +735,12 @@
                                      data-propietario="${c.propietario || ''}">
                                     <div class="flex justify-between items-center">
                                         <span class="font-semibold text-base">${c.nombre_identificador}</span>
-                                        <button class="delete-fleet-btn text-red-500 hover:text-red-700 text-sm" data-id="${c.id}" data-type="cajas">Eliminar</button>
+                                        <!-- MODIFICADO: Contenedor para botones -->
+                                        <div class="flex-shrink-0 flex gap-3">
+                                            <!-- NUEVO BOTÓN -->
+                                            <button class="edit-caja-btn text-blue-500 hover:text-blue-700 text-sm" data-caja-id="${c.id}">Editar</button>
+                                            <button class="delete-fleet-btn text-red-500 hover:text-red-700 text-sm" data-id="${c.id}" data-type="cajas">Eliminar</button>
+                                        </div>
                                     </div>
                                     <div class="mt-2 text-sm text-gray-700 grid grid-cols-2 gap-x-4 gap-y-1">
                                         <p><strong>Placa:</strong> ${c.placa || 'N/A'}</p>
@@ -718,9 +763,72 @@
                     select.addEventListener('change', filterCajas);
                 });
 
+                // NUEVO: Llamar a filterCajas() una vez al cargar para aplicar el filtro por default
+                filterCajas();
+
             } catch(err) {
                 showAlert(`Error al cargar las cajas: ${err.message}`, 'error');
                 cajasContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+
+        // NUEVO: Abre el modal para editar una caja
+        const openEditCajaModal = async (cajaId) => {
+            const modal = document.getElementById('edit-caja-modal');
+            modal.innerHTML = `<div class="bg-white p-8 rounded-xl shadow-md w-full max-w-lg m-auto"><div class="loader mx-auto"></div><p class="text-center mt-2">Cargando datos...</p></div>`;
+            modal.classList.remove('hidden');
+
+            try {
+                const { data: caja, error } = await supabase.from('cajas').select('*').eq('id', cajaId).single();
+                if (error) throw error;
+                if (!caja) throw new Error('Caja no encontrada.');
+
+                // HTML del formulario (copiado y adaptado de loadAdminCajasData)
+                modal.innerHTML = `
+                    <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-lg m-auto max-h-[90vh] flex flex-col">
+                        <h3 class="text-xl font-semibold mb-6 flex-shrink-0">Editar Caja: ${caja.nombre_identificador}</h3>
+                        <form id="edit-caja-form" data-caja-id="${caja.id}" class="space-y-4 flex-grow overflow-y-auto pr-2">
+                            <div><label class="block text-sm">Nombre Identificador</label><input type="text" name="nombre_identificador" required class="w-full mt-1 p-2 border rounded-md" value="${caja.nombre_identificador || ''}"></div>
+                            <div><label class="block text-sm">Placa</label><input type="text" name="placa" required class="w-full mt-1 p-2 border rounded-md" value="${caja.placa || ''}"></div>
+                            <div><label class="block text-sm">Tipo</label><input type="text" name="tipo" required class="w-full mt-1 p-2 border rounded-md" value="${caja.tipo || ''}"></div>
+                            <div><label class="block text-sm">Medida</label><input type="text" name="medida" required class="w-full mt-1 p-2 border rounded-md" value="${caja.medida || ''}"></div>
+                            <div><label class="block text-sm">Núm. Llantas</label><input type="text" name="num_llantas" required class="w-full mt-1 p-2 border rounded-md" value="${caja.num_llantas || ''}"></div>
+                            <div><label class="block text-sm">Propietario</label><input type="text" name="propietario" required class="w-full mt-1 p-2 border rounded-md" value="${caja.propietario || ''}"></div>
+                            
+                            <div class="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm">Origen</label>
+                                    <select name="origen" required class="w-full mt-1 p-2 border rounded-md">
+                                        <option value="Nacional" ${caja.origen === 'Nacional' ? 'selected' : ''}>Nacional</option>
+                                        <option value="Extranjero" ${caja.origen === 'Extranjero' ? 'selected' : ''}>Extranjero</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm">Propiedad</label>
+                                    <select name="propiedad" required class="w-full mt-1 p-2 border rounded-md">
+                                        <option value="Propio" ${caja.propiedad === 'Propio' ? 'selected' : ''}>Propio</option>
+                                        <option value="Ajeno" ${caja.propiedad === 'Ajeno' ? 'selected' : ''}>Ajeno</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm">Estatus</label>
+                                    <select name="estatus" required class="w-full mt-1 p-2 border rounded-md">
+                                        <option value="Activo" ${caja.estatus === 'Activo' ? 'selected' : ''}>Activo</option>
+                                        <option value="Inactivo" ${caja.estatus === 'Inactivo' ? 'selected' : ''}>Inactivo</option>
+                                        <option value="Mantenimiento" ${caja.estatus === 'Mantenimiento' ? 'selected' : ''}>Mantenimiento</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </form>
+                        <div class="flex justify-end gap-4 mt-6 pt-4 border-t flex-shrink-0">
+                            <button type="button" class="close-modal-btn bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                            <button type="submit" form="edit-caja-form" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Guardar Cambios</button>
+                        </div>
+                    </div>`;
+
+            } catch (err) {
+                showAlert(`Error al cargar la caja: ${err.message}`, 'error');
+                modal.classList.add('hidden');
             }
         };
 
@@ -782,7 +890,7 @@
             const container = document.getElementById('admin-content-reportes');
             container.innerHTML = `
                 <h3 class="text-xl font-semibold mb-4">Generar Reportes en Excel</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div class="bg-gray-50 p-6 rounded-lg">
                         <h4 class="font-semibold text-lg mb-2">Reporte de Viajes Asignados</h4>
                         <p class="text-gray-600 mb-4 text-sm">Descarga una lista de todos los viajes que están actualmente en curso y pendientes de completar por los choferes.</p>
@@ -792,6 +900,12 @@
                         <h4 class="font-semibold text-lg mb-2">Reporte de Viajes Completados</h4>
                         <p class="text-gray-600 mb-4 text-sm">Descarga un historial de todos los viajes que han sido completados, incluyendo los que ya han sido pagados.</p>
                         <button data-status="Completado" class="download-report-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Completados y Pagados</button>
+                    </div>
+                    <!-- NUEVO REPORTE DE CAJAS -->
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h4 class="font-semibold text-lg mb-2">Reporte General de Cajas</h4>
+                        <p class="text-gray-600 mb-4 text-sm">Descarga una lista completa de todas las cajas (remolques) registradas en el sistema.</p>
+                        <button id="download-cajas-report-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Reporte de Cajas</button>
                     </div>
                 </div>
             `;
@@ -833,6 +947,83 @@
                 XLSX.writeFile(workbook, fileName);
 
             } catch (err) { showAlert(`Error al generar el reporte: ${err.message}`, 'error'); }
+        };
+
+        // NUEVO: Maneja la descarga del reporte de cajas
+        const handleDownloadCajasReport = async () => {
+            showAlert('Generando reporte de cajas, esto puede tardar un momento...');
+            try {
+                // Reutilizar la lógica de paginación para obtener TODAS las cajas
+                let allCajas = [];
+                let rangeStart = 0;
+                const rangeSize = 1000;
+                let hasMore = true;
+
+                while(hasMore) {
+                    const { data: cajasLote, error } = await supabase
+                        .from('cajas')
+                        .select('*')
+                        .order('nombre_identificador', { ascending: true })
+                        .range(rangeStart, rangeStart + rangeSize - 1);
+
+                    if (error) throw error;
+                    
+                    allCajas = allCajas.concat(cajasLote);
+                    
+                    if (cajasLote.length < rangeSize) {
+                        hasMore = false;
+                    } else {
+                        rangeStart += rangeSize;
+                    }
+                }
+                // Fin del bucle, 'allCajas' tiene todo.
+
+                if (allCajas.length === 0) {
+                    showAlert('No hay cajas para generar este reporte.', 'error');
+                    return;
+                }
+
+                // Definir el orden y nombre de las columnas
+                const reportData = allCajas.map(c => ({
+                    'Nombre Identificador': c.nombre_identificador,
+                    'Placa': c.placa,
+                    'Tipo': c.tipo,
+                    'Medida': c.medida,
+                    'Num. Llantas': c.num_llantas,
+                    'Propietario': c.propietario,
+                    'Origen': c.origen,
+                    'Propiedad': c.propiedad,
+                    'Estatus': c.estatus,
+                    'ID (Sistema)': c.id,
+                    'Fecha Creación': new Date(c.created_at).toLocaleString()
+                }));
+                
+                const worksheet = XLSX.utils.json_to_sheet(reportData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Cajas");
+                
+                // Ajustar anchos de columna (opcional pero útil)
+                const wscols = [
+                    { wch: 25 }, // Nombre
+                    { wch: 15 }, // Placa
+                    { wch: 15 }, // Tipo
+                    { wch: 10 }, // Medida
+                    { wch: 15 }, // Num. Llantas
+                    { wch: 20 }, // Propietario
+                    { wch: 15 }, // Origen
+                    { wch: 15 }, // Propiedad
+                    { wch: 15 }, // Estatus
+                    { wch: 30 }, // ID
+                    { wch: 20 }  // Fecha
+                ];
+                worksheet['!cols'] = wscols;
+
+                const fileName = `Reporte_General_Cajas_${new Date().toISOString().split('T')[0]}.xlsx`;
+                XLSX.writeFile(workbook, fileName);
+
+            } catch (err) { 
+                showAlert(`Error al generar el reporte de cajas: ${err.message}`, 'error'); 
+            }
         };
 
         // Modificado: Renombrado
@@ -880,22 +1071,95 @@
             }
         };
 
-        // Modificado: Recarga los datos de la pestaña correcta
-        const handleFleetDelete = async (id, type) => {
-            openConfirmModal(`¿Seguro que quieres eliminar este elemento?`, async () => {
-                const { error } = await supabase.from(type).delete().eq('id', id);
-                if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
-                else { 
-                    showAlert('Elemento eliminado.'); 
-                    if (type === 'camiones') {
-                        await loadAdminCamionesData();
-                    } else if (type === 'cajas') {
-                        await loadAdminCajasData();
+        // NUEVO: Maneja el formulario de editar caja
+        const handleUpdateCaja = async (event) => {
+            const form = event.target;
+            const cajaId = form.dataset.cajaId;
+            try {
+                const formData = new FormData(form);
+                const updatedCaja = {
+                    nombre_identificador: formData.get('nombre_identificador'),
+                    placa: formData.get('placa'),
+                    tipo: formData.get('tipo'),
+                    medida: formData.get('medida'),
+                    num_llantas: formData.get('num_llantas'),
+                    propietario: formData.get('propietario'),
+                    origen: formData.get('origen'),
+                    propiedad: formData.get('propiedad'),
+                    estatus: formData.get('estatus'),
+                };
+
+                // Verificación
+                for (const key in updatedCaja) {
+                    if (!updatedCaja[key]) {
+                        throw new Error(`El campo '${key.replace('_', ' ')}' es obligatorio.`);
                     }
                 }
-                closeConfirmModal();
-            });
+                
+                const { error } = await supabase.from('cajas').update(updatedCaja).eq('id', cajaId);
+                if (error) throw error;
+                
+                showAlert('¡Caja actualizada con éxito!');
+                document.getElementById('edit-caja-modal').classList.add('hidden');
+                await loadAdminCajasData(); // Recargar la lista
+
+            } catch (err) {
+                showAlert(`Error al actualizar la caja: ${err.message}`, 'error');
+            }
         };
+
+        // Modificado: Recarga los datos de la pestaña correcta
+        const handleFleetDelete = async (id, type) => {
+            // VALIDACIÓN MEJORADA
+            if (type === 'cajas') {
+                try {
+                    // 1. Validar si la caja está en un viaje 'Asignado'
+                    const { data: viajes, error: checkError } = await supabase
+                        .from('viajes')
+                        .select('id')
+                        .eq('caja_id', id)
+                        .eq('status', 'Asignado')
+                        .limit(1);
+    
+                    if (checkError) throw checkError;
+    
+                    // 2. Si se encuentra un viaje, mostrar error y detener
+                    if (viajes && viajes.length > 0) {
+                        showAlert('No se puede eliminar: La caja está asignada a un viaje activo (Asignado).', 'error');
+                        return;
+                    }
+    
+                    // 3. Si no hay viajes, mostrar la confirmación
+                    openConfirmModal(`¿Seguro que quieres eliminar esta caja?`, async () => {
+                        const { error } = await supabase.from('cajas').delete().eq('id', id);
+                        if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
+                        else { 
+                            showAlert('Caja eliminada.'); 
+                            await loadAdminCajasData();
+                        }
+                        closeConfirmModal();
+                    });
+    
+                } catch (err) {
+                    showAlert(`Error de validación: ${err.message}`, 'error');
+                }
+            } 
+            // Lógica original para 'camiones' (o cualquier otro tipo)
+            else {
+                openConfirmModal(`¿Seguro que quieres eliminar este elemento?`, async () => {
+                    const { error } = await supabase.from(type).delete().eq('id', id);
+                    if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
+                    else { 
+                        showAlert('Elemento eliminado.'); 
+                        if (type === 'camiones') {
+                            await loadAdminCamionesData();
+                        }
+                    }
+                    closeConfirmModal();
+                });
+            }
+        };
+
         const handleCreateUser = async (event) => {
             const { data: { session: adminSession } } = await supabase.auth.getSession();
             if (!adminSession) { showAlert('Error de autenticación.', 'error'); return; }
@@ -951,6 +1215,8 @@
             if(button.classList.contains('add-coordenada-btn')) addCoordenadaInput(button.dataset.container);
             if(button.classList.contains('remove-coordenada-btn')) button.parentElement.remove();
             if(button.classList.contains('edit-viaje-btn')) openEditViajeModal(button.dataset.viajeId);
+            // NUEVO
+            if(button.classList.contains('edit-caja-btn')) openEditCajaModal(button.dataset.cajaId);
             if(button.classList.contains('close-modal-btn')) button.closest('.fixed').classList.add('hidden');
             if(button.classList.contains('delete-fleet-btn')) handleFleetDelete(button.dataset.id, button.dataset.type);
             if(button.classList.contains('delete-user-btn')) handleDeleteUser(button.dataset.userId);
@@ -960,6 +1226,8 @@
                 const statuses = status === 'Completado' ? ['Completado', 'Pagado'] : [status];
                 handleDownloadReport(statuses);
             }
+            // NUEVO
+            if(button.id === 'download-cajas-report-btn') handleDownloadCajasReport();
         });
 
         // Modificado: Llama a las nuevas funciones de submit
@@ -972,6 +1240,8 @@
                 if (form.id === 'complete-trip-form') await handleTripCompletion(event);
                 if (form.id === 'admin-add-camion-form') await handleCamionAdd(event);
                 if (form.id === 'admin-add-caja-form') await handleCajaAdd(event);
+                // NUEVO
+                if (form.id === 'edit-caja-form') await handleUpdateCaja(event);
                 if (form.id === 'create-user-form') await handleCreateUser(event);
             } catch (err) {
                 showAlert(`Error: ${err.message}`, 'error');
@@ -983,6 +1253,12 @@
     </script>
 </body>
 </html>
+
+
+
+
+
+
 
 
 
