@@ -1423,22 +1423,24 @@
                         'Propiedad': c.propiedad,
                         'Propietario': c.propietario,
                         'Estatus': c.estatus,
-                        'ID': c.id,
+                        // 'ID': c.id, // ID Eliminado
                         'Fecha Creación': c.created_at
                     }));
                 } else if (reportType === 'Usuarios') { // NUEVO CASO
                     // Reporte de Usuarios
                     const query = supabase.from('profiles').select('*');
                     const usuarios = await fetchAllPages(query);
+                    // --- CAMBIO: Simplificar columnas ---
                     reportData = usuarios.map(u => ({
                         'Nombre Completo': u.full_name,
                         'Username': u.username,
                         'Rol': u.role,
-                        'Tipo Operador': u.tipo_operador,
-                        'Email (Sistema)': u.email, // Email real o falso
-                        'ID Usuario': u.id,
-                        'Fecha Creación Perfil': u.created_at
+                        'Tipo Operador': u.tipo_operador
+                        // 'Email (Sistema)': u.email, // Eliminado
+                        // 'ID Usuario': u.id, // ID Eliminado
+                        // 'Fecha Creación Perfil': u.created_at // Eliminado
                     }));
+                    // --- FIN CAMBIO ---
                 } else {
                     // Reportes de Viajes
                     const statuses = reportType === 'Completado' ? ['Completado', 'Pagado'] : [reportType];
@@ -1454,7 +1456,7 @@
                         if (!v.coordenadas || v.coordenadas.length === 0) {
                             // Si un viaje no tiene paradas, mostrarlo una vez
                             return {
-                                'ID Viaje': v.id,
+                                // 'ID Viaje': v.id, // ID Eliminado
                                 'Fecha': new Date(v.created_at).toLocaleDateString(),
                                 'Chofer': v.chofer?.full_name,
                                 'Estado': v.status,
@@ -1469,7 +1471,7 @@
 
                         v.coordenadas.sort((a, b) => a.orden - b.orden);
                         return v.coordenadas.map(coord => ({
-                            'ID Viaje': v.id,
+                            // 'ID Viaje': v.id, // ID Eliminado
                             'Fecha': new Date(v.created_at).toLocaleDateString(),
                             'Chofer': v.chofer?.full_name,
                             'Estado': v.status,
