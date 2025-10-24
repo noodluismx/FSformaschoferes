@@ -61,7 +61,11 @@
              <div class="bg-white p-8 rounded-xl shadow-md">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">Panel del Chofer</h2>
-                    <button id="logout-button-chofer" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                    <!-- Botones Ayuda y Logout -->
+                    <div class="flex gap-4">
+                        <button class="open-help-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Ayuda</button>
+                        <button id="logout-button-chofer" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                    </div>
                 </div>
                 <div id="chofer-content"></div>
             </div>
@@ -71,7 +75,11 @@
             <div class="bg-white p-8 rounded-xl shadow-md">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">Panel de Tráfico</h2>
-                    <button id="logout-button-trafico" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                     <!-- Botones Ayuda y Logout -->
+                     <div class="flex gap-4">
+                        <button class="open-help-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Ayuda</button>
+                        <button id="logout-button-trafico" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                    </div>
                 </div>
                 <div id="trafico-content" class="mt-6"></div>
             </div>
@@ -81,7 +89,11 @@
             <div class="bg-white p-8 rounded-xl shadow-md">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">Panel de Administración</h2>
-                    <button id="logout-button-admin" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                     <!-- Botones Ayuda y Logout -->
+                     <div class="flex gap-4">
+                        <button class="open-help-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Ayuda</button>
+                        <button id="logout-button-admin" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar Sesión</button>
+                    </div>
                 </div>
                  <div class="border-b border-gray-200">
                     <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
@@ -111,6 +123,19 @@
     <div id="edit-viaje-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
     <div id="view-route-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"></div>
     <div id="edit-caja-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
+    <!-- NUEVO: Modal de Ayuda -->
+    <div id="help-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-2xl m-auto max-h-[80vh] flex flex-col">
+            <h3 class="text-xl font-semibold mb-6 flex-shrink-0">Ayuda</h3>
+            <div id="help-content" class="space-y-4 flex-grow overflow-y-auto pr-2 text-sm text-gray-700">
+                <!-- El contenido de ayuda se cargará aquí -->
+                <div class="loader mx-auto"></div>
+            </div>
+            <div class="flex justify-end mt-6 pt-4 border-t flex-shrink-0">
+                <button type="button" class="close-modal-btn bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Cerrar</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
@@ -120,7 +145,129 @@
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const AUTH_DOMAIN = '@formas.auth';
         let currentUser = null;
+        let currentUserRole = null; // Guardar el rol actual
         let adminDropdownCache = { choferes: null, camiones: null, cajas: null };
+
+        // --- Contenido de Ayuda ---
+        const helpTexts = {
+            Chofer: `
+                <h4 class="font-semibold text-base mb-2">Panel del Chofer</h4>
+                <p>Aquí puedes ver los viajes que te han sido asignados y aún no has completado.</p>
+                <ul class="list-disc list-inside space-y-1 pl-4">
+                    <li>Revisa la ruta y las unidades (camión/caja) asignadas a cada parada.</li>
+                    <li>Cuando termines un viaje, haz clic en <strong>Completar Viaje</strong>.</li>
+                    <li>Se te pedirá subir una foto o archivo del <strong>comprobante de diésel</strong> para marcar el viaje como finalizado.</li>
+                </ul>
+            `,
+            Trafico: `
+                <h4 class="font-semibold text-base mb-2">Panel de Tráfico</h4>
+                <p>Desde aquí puedes crear nuevos viajes y editar los que ya están asignados.</p>
+                <ul class="list-disc list-inside space-y-1 pl-4">
+                    <li><strong>Crear Nuevo Viaje:</strong>
+                        <ul class="list-circle list-inside pl-4">
+                            <li>Selecciona el <strong>Chofer</strong>.</li>
+                            <li>Agrega las <strong>Coordenadas</strong> (paradas) del viaje haciendo clic en "+ Agregar Coordenada".</li>
+                            <li>Para cada coordenada, especifica la <strong>descripción</strong>, <strong>fecha</strong>, <strong>camión</strong> y <strong>caja</strong>.</li>
+                            <li>Haz clic en <strong>Asignar Viaje</strong> para crearlo.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Viajes Asignados:</strong>
+                        <ul class="list-circle list-inside pl-4">
+                            <li>Ve la lista de viajes actualmente en curso.</li>
+                            <li>Haz clic en <strong>Editar</strong> para modificar el chofer o la ruta (añadir/quitar paradas, cambiar fechas o unidades) de un viaje ya asignado.</li>
+                        </ul>
+                    </li>
+                </ul>
+            `,
+            Admin: {
+                viajes: `
+                    <h4 class="font-semibold text-base mb-2">Monitor de Viajes</h4>
+                    <p>Visualiza todos los viajes registrados en el sistema, sin importar su estado.</p>
+                    <ul class="list-disc list-inside space-y-1 pl-4">
+                        <li>Consulta la información básica de cada viaje: ID, fecha, chofer asignado.</li>
+                        <li>Verifica el <strong>Estado</strong> actual del viaje (Asignado, Completado, Pagado).</li>
+                        <li>Accede al <strong>Recibo</strong> de diésel subido por el chofer haciendo clic en "Ver" (si está disponible).</li>
+                        <li>Consulta la <strong>Ruta</strong> detallada de cada viaje (paradas, fechas, unidades) haciendo clic en "Ver".</li>
+                    </ul>
+                `,
+                camiones: `
+                    <h4 class="font-semibold text-base mb-2">Gestión de Camiones</h4>
+                    <p>Administra el catálogo de camiones disponibles.</p>
+                    <ul class="list-disc list-inside space-y-1 pl-4">
+                        <li><strong>Agregar Camión:</strong> Escribe el nombre o identificador único del nuevo camión y haz clic en el botón "+".</li>
+                        <li><strong>Eliminar Camión:</strong> Haz clic en "Eliminar" junto al camión que deseas quitar. <strong>Nota:</strong> No podrás eliminar un camión si está asignado a alguna parada de un viaje activo.</li>
+                    </ul>
+                `,
+                cajas: `
+                    <h4 class="font-semibold text-base mb-2">Gestión de Cajas</h4>
+                    <p>Administra el catálogo completo de cajas (remolques).</p>
+                    <ul class="list-disc list-inside space-y-1 pl-4">
+                        <li><strong>Agregar Caja:</strong> Rellena todos los campos del formulario con la información de la nueva caja y haz clic en "Agregar Caja".</li>
+                        <li><strong>Buscar Cajas:</strong> Utiliza el campo "Buscar por Nombre/Placa" para filtrar la lista.</li>
+                        <li><strong>Paginación:</strong> Usa los botones "Anterior" y "Siguiente" o el selector de "Registros" para navegar por la lista completa de cajas.</li>
+                        <li><strong>Editar Caja:</strong> Haz clic en "Editar" para modificar los detalles de una caja existente.</li>
+                        <li><strong>Eliminar Caja:</strong> Haz clic en "Eliminar". <strong>Nota:</strong> No podrás eliminar una caja si está asignada a alguna parada de un viaje activo.</li>
+                    </ul>
+                `,
+                usuarios: `
+                    <h4 class="font-semibold text-base mb-2">Gestión de Usuarios</h4>
+                    <p>Administra las cuentas de usuario que pueden acceder a la aplicación.</p>
+                    <ul class="list-disc list-inside space-y-1 pl-4">
+                        <li><strong>Usuarios Activos:</strong> Ve la lista de todos los usuarios registrados, su nombre de usuario (@), rol y tipo de operador (si es chofer).</li>
+                        <li><strong>Crear Nuevo Usuario:</strong>
+                            <ul class="list-circle list-inside pl-4">
+                                <li>Ingresa el <strong>Nombre Completo</strong>.</li>
+                                <li>Asigna un <strong>Nombre de Usuario</strong> único (este será usado para iniciar sesión).</li>
+                                <li>Establece una <strong>Contraseña</strong>.</li>
+                                <li>Selecciona el <strong>Rol</strong> (Chofer, Tráfico, Admin).</li>
+                                <li>Si es Chofer, selecciona el <strong>Tipo de Operador</strong>.</li>
+                                <li>Haz clic en "Crear Usuario". El sistema creará la cuenta y el perfil.</li>
+                            </ul>
+                        </li>
+                         <li><strong>Eliminar Perfil de Usuario:</strong> Haz clic en "Eliminar Perfil". Esto borra el registro de la base de datos (nombre, rol), pero <strong>no</strong> elimina la cuenta de autenticación (el usuario podría volver a ser creado con el mismo nombre de usuario si se desea). <strong>No puedes eliminar tu propia cuenta.</strong></li>
+                    </ul>
+                `,
+                reportes: `
+                    <h4 class="font-semibold text-base mb-2">Reportes</h4>
+                    <p>Genera y descarga informes en formato Excel.</p>
+                    <ul class="list-disc list-inside space-y-1 pl-4">
+                        <li><strong>Reporte de Viajes Asignados:</strong> Descarga un Excel con todos los viajes que tienen el estado "Asignado".</li>
+                        <li><strong>Reporte de Viajes Completados:</strong> Descarga un Excel con todos los viajes que tienen el estado "Completado" o "Pagado".</li>
+                        <li><strong>Reporte General de Cajas:</strong> Descarga un Excel con la lista completa de todas las cajas registradas en el sistema.</li>
+                    </ul>
+                    <p class="mt-2"><strong>Nota:</strong> La generación de reportes puede tardar unos segundos o minutos dependiendo de la cantidad de datos.</p>
+                `,
+                 logs: `
+                    <h4 class="font-semibold text-base mb-2">Ver Logs</h4>
+                    <p>Muestra un registro de las últimas 100 acciones importantes realizadas en la aplicación.</p>
+                    <ul class="list-disc list-inside space-y-1 pl-4">
+                        <li>Consulta quién hizo qué y cuándo.</li>
+                        <li>Revisa los detalles de cada acción (si están disponibles).</li>
+                        <li>Útil para auditoría y seguimiento de actividad.</li>
+                    </ul>
+                `
+            }
+        };
+
+        // --- Función para abrir el Modal de Ayuda ---
+        const openHelpModal = () => {
+            const modal = document.getElementById('help-modal');
+            const contentDiv = document.getElementById('help-content');
+            
+            let helpContent = '<p>No se encontró ayuda para tu rol actual.</p>'; // Default
+            
+            if (currentUserRole === 'Admin') {
+                // Para admin, obtener la pestaña activa
+                const selectedTab = document.querySelector('.tab-btn.text-blue-600')?.dataset.tab || 'viajes';
+                helpContent = helpTexts.Admin[selectedTab] || '<p>Ayuda no disponible para esta pestaña.</p>';
+            } else if (currentUserRole && helpTexts[currentUserRole]) {
+                helpContent = helpTexts[currentUserRole];
+            }
+
+            contentDiv.innerHTML = helpContent;
+            modal.classList.remove('hidden');
+        };
+
 
         // --- NUEVO: Función de Logging ---
         const logAction = async (action, details = null) => {
@@ -169,6 +316,10 @@
              ['loading-view', 'login-view', 'chofer-view', 'trafico-view', 'administrador-view'].forEach(id => {
                 document.getElementById(id).classList.toggle('hidden', id !== viewId);
             });
+             // Limpiar rol al cambiar de vista principal (ej. logout)
+             if (viewId === 'login-view') {
+                 currentUserRole = null;
+             }
         };
 
         const handleLogin = async (event) => {
@@ -236,6 +387,7 @@
             await logAction('Cierre de sesión'); // Loguear ANTES de limpiar currentUser
             await supabase.auth.signOut();
             currentUser = null;
+            currentUserRole = null; // Limpiar rol
             showView('login-view');
         };
 
@@ -244,8 +396,10 @@
              try {
                 const { data: profile, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
                 if (error) throw error;
+                
+                currentUserRole = profile.role; // Guardar el rol actual
 
-                switch (profile.role) {
+                switch (currentUserRole) {
                     case 'Chofer': showView('chofer-view'); await loadChoferData(); break;
                     case 'Trafico': showView('trafico-view'); await loadTraficoData(); break;
                     case 'Admin': showView('administrador-view'); await loadAdminData(); break;
@@ -255,7 +409,7 @@
                 showAlert(`Error Crítico: ${err.message}.`, 'error');
                 console.error("Error de carga de datos:", err);
                 // No logueamos error crítico aquí porque podría no haber currentUser
-                handleLogout();
+                handleLogout(); // Forzar logout si hay error crítico
             }
         };
 
@@ -266,6 +420,7 @@
                  await navigateByUserRole(session.user);
              } else {
                  currentUser = null;
+                 currentUserRole = null; // Limpiar rol
                  showView('login-view');
              }
         };
@@ -1538,6 +1693,8 @@
                 handleDownloadReport(status);
             }
             if(button.classList.contains('edit-caja-btn')) openEditCajaModal(button.dataset.cajaId);
+             // NUEVO: Listener para abrir el modal de ayuda
+             if (button.classList.contains('open-help-btn')) openHelpModal();
         });
 
         document.addEventListener('submit', async (event) => {
