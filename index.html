@@ -10,8 +10,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Supabase Client -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- SheetJS (for Excel export) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -46,8 +44,8 @@
                 </div>
                 <form id="login-form">
                     <div class="mb-4">
-                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico</label>
-                        <input type="email" id="email" required class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                        <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Nombre de Usuario</label>
+                        <input type="text" id="username" required class="w-full px-4 py-2 border border-gray-300 rounded-lg">
                     </div>
                     <div class="mb-6">
                         <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
@@ -88,22 +86,21 @@
                  <div class="border-b border-gray-200">
                     <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
                         <button data-tab="viajes" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-blue-600 border-blue-600">Monitor de Viajes</button>
-                        <!-- Pestaña renombrada -->
                         <button data-tab="camiones" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Camiones</button>
-                        <!-- Nueva pestaña -->
                         <button data-tab="cajas" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Cajas</button>
                         <button data-tab="usuarios" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Gestión de Usuarios</button>
                         <button data-tab="reportes" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Reportes</button>
+                        <!-- Pestaña Opcional para Ver Logs -->
+                        <button data-tab="logs" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 border-transparent">Ver Logs</button>
                     </nav>
                 </div>
 
                 <div id="admin-content-viajes" class="admin-tab-content mt-6"></div>
-                <!-- Contenedor renombrado -->
                 <div id="admin-content-camiones" class="admin-tab-content hidden mt-6"></div>
-                <!-- Nuevo contenedor -->
                 <div id="admin-content-cajas" class="admin-tab-content hidden mt-6"></div>
                 <div id="admin-content-usuarios" class="admin-tab-content hidden mt-6"></div>
                 <div id="admin-content-reportes" class="admin-tab-content hidden mt-6"></div>
+                <div id="admin-content-logs" class="admin-tab-content hidden mt-6"></div> <!-- Contenedor para Logs -->
             </div>
         </div>
     </div>
@@ -112,17 +109,52 @@
     <div id="upload-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"></div>
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4"></div>
     <div id="edit-viaje-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
-    <!-- Nuevo modal para editar caja -->
-    <div id="edit-caja-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
     <div id="view-route-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"></div>
+    <div id="edit-caja-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4 overflow-y-auto"></div>
 
     <script type="module">
-        // --- SUPABASE & APP CONFIG ---
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
         const SUPABASE_URL = 'https://olunfpafoxjsoisqkhri.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9sdW5mcGFmb3hqc29pc3FraHJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNzQ3MzcsImV4cCI6MjA3NDk1MDczN30.CrqqVhJXSMwqCtNgZDtipcE26OHEgkyfrCNxFEvPp1o';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const AUTH_DOMAIN = '@formas.auth';
         let currentUser = null;
-        let adminDropdownCache = {}; // Cache para los dropdowns de admin (camiones, cajas)
+        let adminDropdownCache = { choferes: null, camiones: null, cajas: null };
+
+        // --- NUEVO: Función de Logging ---
+        const logAction = async (action, details = null) => {
+            if (!currentUser) {
+                console.warn("Intento de log sin usuario actual:", action, details);
+                return; // No loguear si no hay usuario (ej. durante el login fallido)
+            }
+            try {
+                // Obtener username del profile para mejor legibilidad en logs
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('username')
+                    .eq('id', currentUser.id)
+                    .single();
+
+                const username = profile?.username || 'desconocido';
+
+                const logEntry = {
+                    user_id: currentUser.id,
+                    username: username,
+                    action: action,
+                    details: details
+                };
+                const { error } = await supabase.from('app_log').insert(logEntry);
+                if (error) {
+                    console.error("Error al guardar log:", error);
+                    // Opcional: Mostrar alerta si el log falla? Podría ser molesto.
+                    // showAlert(`Error al registrar acción: ${error.message}`, 'error');
+                }
+            } catch (err) {
+                console.error("Error inesperado en logAction:", err);
+            }
+        };
+        // --- FIN NUEVO ---
 
         // --- CORE APP LOGIC ---
         const showAlert = (message, type = 'success') => {
@@ -132,33 +164,84 @@
             document.body.appendChild(el);
             setTimeout(() => el.remove(), type === 'error' ? 12000 : 4000);
         };
-        
+
         const showView = (viewId) => {
-            ['loading-view', 'login-view', 'chofer-view', 'trafico-view', 'administrador-view'].forEach(id => {
+             ['loading-view', 'login-view', 'chofer-view', 'trafico-view', 'administrador-view'].forEach(id => {
                 document.getElementById(id).classList.toggle('hidden', id !== viewId);
             });
         };
-        
+
         const handleLogin = async (event) => {
             event.preventDefault();
-            document.getElementById('login-error').textContent = '';
-            const { error } = await supabase.auth.signInWithPassword({
-                email: document.getElementById('email').value,
-                password: document.getElementById('password').value,
-            });
-            if (error) { document.getElementById('login-error').textContent = 'Error: Credenciales inválidas.'; } 
-            else { checkSession(); }
+            const errorDiv = document.getElementById('login-error');
+            errorDiv.textContent = '';
+            const usernameInput = document.getElementById('username'); // Guardar referencia
+            const username = usernameInput.value.toLowerCase();
+            const password = document.getElementById('password').value;
+            let loggedInUser = null; // Para guardar el usuario que hizo login
+            let loginMethod = ''; // Para saber cómo hizo login
+
+            try {
+                // Intento 1: Email Falso
+                const emailFalso = username + AUTH_DOMAIN;
+                let { data: sessionData1, error: signInError1 } = await supabase.auth.signInWithPassword({
+                    email: emailFalso,
+                    password: password,
+                });
+
+                if (sessionData1 && sessionData1.user) {
+                    loggedInUser = sessionData1.user;
+                    loginMethod = 'Email Falso';
+                } else if (signInError1) {
+                    // Intento 2: Híbrido (Buscar email real)
+                    const { data: profile, error: profileError } = await supabase
+                        .from('profiles')
+                        .select('email')
+                        .eq('username', username)
+                        .single();
+
+                    if (profileError || !profile || !profile.email) {
+                        throw new Error('Credenciales inválidas.'); // Error genérico
+                    }
+
+                    const { data: sessionData2, error: signInError2 } = await supabase.auth.signInWithPassword({
+                        email: profile.email,
+                        password: password,
+                    });
+
+                    if (sessionData2 && sessionData2.user) {
+                        loggedInUser = sessionData2.user;
+                        loginMethod = 'Email Real';
+                    } else {
+                        throw new Error('Credenciales inválidas.'); // Error genérico si ambos fallan
+                    }
+                } else {
+                     throw new Error('Credenciales inválidas.'); // Caso inesperado
+                }
+
+                // Si llegamos aquí, el login fue exitoso
+                currentUser = loggedInUser; // Establecer currentUser ANTES de loguear
+                await logAction('Inicio de sesión exitoso', { method: loginMethod });
+                checkSession(); // Continuar a la vista correspondiente
+
+            } catch (err) {
+                 // Loguear intento fallido (sin user_id) - Opcional
+                 // console.error("Intento de login fallido para:", username);
+                 errorDiv.textContent = 'Error: Credenciales inválidas.';
+            }
         };
 
+
         const handleLogout = async () => {
+            await logAction('Cierre de sesión'); // Loguear ANTES de limpiar currentUser
             await supabase.auth.signOut();
             currentUser = null;
             showView('login-view');
         };
 
         const navigateByUserRole = async (user) => {
-            currentUser = user;
-            try {
+             currentUser = user; // Asegurar que esté seteado
+             try {
                 const { data: profile, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
                 if (error) throw error;
 
@@ -171,45 +254,30 @@
             } catch (err) {
                 showAlert(`Error Crítico: ${err.message}.`, 'error');
                 console.error("Error de carga de datos:", err);
+                // No logueamos error crítico aquí porque podría no haber currentUser
                 handleLogout();
             }
         };
-        
+
         const checkSession = async () => {
              const { data: { session } } = await supabase.auth.getSession();
-             if (session) { await navigateByUserRole(session.user); } 
-             else { showView('login-view'); }
+             if (session && session.user) { // Verificar que user exista
+                 currentUser = session.user; // Establecer currentUser aquí también
+                 await navigateByUserRole(session.user);
+             } else {
+                 currentUser = null;
+                 showView('login-view');
+             }
         };
-        
-        // --- Lógica de carga de datos comunes (para Tráfico) ---
-        const loadAdminDropdowns = async (force = false) => {
-            if (force || !adminDropdownCache.camiones) {
-                const { data } = await supabase.from('camiones').select('id, nombre_identificador');
-                adminDropdownCache.camiones = data || [];
-            }
-            if (force || !adminDropdownCache.cajas) {
-                // Optimizado: Solo trae id y nombre
-                const { data } = await supabase.from('cajas').select('id, nombre_identificador');
-                adminDropdownCache.cajas = data || [];
-            }
-        };
-        
+
         // --- CHOFER LOGIC ---
         const loadChoferData = async () => {
             const choferContent = document.getElementById('chofer-content');
             choferContent.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
-                // Modificado: Trae camiones y cajas desde coordenadas
-                const { data: viajes, error } = await supabase.from('viajes').select(`
-                    *, 
-                    coordenadas(
-                        *,
-                        camiones(nombre_identificador),
-                        cajas(nombre_identificador)
-                    )
-                `).eq('chofer_id', currentUser.id).order('created_at', {ascending: false});
+                const { data: viajes, error } = await supabase.from('viajes').select(`*, coordenadas(*, camiones(nombre_identificador), cajas(nombre_identificador))`).eq('chofer_id', currentUser.id).order('created_at', {ascending: false});
                 if (error) throw error;
-                
+
                 const viajesAsignados = viajes.filter(v => v.status === 'Asignado');
                 choferContent.innerHTML = `
                     <h3 class="text-xl font-semibold mb-4">Mis Viajes Asignados</h3>
@@ -224,16 +292,12 @@
                                 <span class="text-sm font-medium py-1 px-3 rounded-full bg-blue-100 text-blue-800">${v.status}</span>
                             </div>
                             <div class="mt-4">
-                                <h5 class="font-semibold">Ruta:</h5>
-                                <ol class="list-decimal list-inside mt-2 text-gray-700 space-y-1">
-                                    ${(v.coordenadas && v.coordenadas.length > 0) ? v.coordenadas.sort((a,b)=>a.orden - b.orden).map(c=>`
-                                        <li>
-                                            ${c.descripcion} - ${c.fecha_entrega}
-                                            <br>
-                                            <span class="text-xs pl-4 text-gray-600">Camión: ${c.camiones?.nombre_identificador || 'N/A'} | Caja: ${c.cajas?.nombre_identificador || 'N/A'}</span>
-                                        </li>
-                                    `).join('') : '<li>Sin ruta.</li>'}
-                                </ol>
+                                <h5 class="font-semibold">Ruta y Unidades:</h5>
+                                <ol class="list-decimal list-inside mt-2 text-gray-700 space-y-1">${(v.coordenadas && v.coordenadas.length > 0) ? v.coordenadas.sort((a,b)=>a.orden - b.orden).map(c=>`
+                                    <li>
+                                        ${c.descripcion} - ${c.fecha_entrega}<br>
+                                        <span class="text-xs pl-4 text-gray-600">Vehículo: ${c.camiones?.nombre_identificador || 'N/A'} | Caja: ${c.cajas?.nombre_identificador || 'N/A'}</span>
+                                    </li>`).join('') : '<li>Sin ruta.</li>'}</ol>
                             </div>
                             <div class="mt-4 text-right"><button data-viaje-id="${v.id}" class="complete-viaje-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Completar Viaje</button></div>
                         </div>`).join('')}
@@ -243,6 +307,7 @@
                 choferContent.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
             }
         };
+
 
         const openUploadModal = (viajeId) => {
             const modal = document.getElementById('upload-modal');
@@ -288,30 +353,35 @@
                 if (uploadError) throw uploadError;
 
                 const { data: urlData } = supabase.storage.from('recibos').getPublicUrl(filePath);
-                const { error: updateError } = await supabase.from('viajes').update({ status: 'Completado', recibo_diesel_url: urlData.publicUrl }).eq('id', viajeId);
+                const publicUrl = urlData.publicUrl; // Guardar URL
+                const { error: updateError } = await supabase.from('viajes').update({ status: 'Completado', recibo_diesel_url: publicUrl }).eq('id', viajeId);
                 if (updateError) throw updateError;
-                
+
+                // Log
+                await logAction('Completó Viaje', { viajeId: viajeId, reciboUrl: publicUrl });
+
                 showAlert('¡Viaje completado con éxito!');
                 document.getElementById('upload-modal').classList.add('hidden');
                 await loadChoferData();
             } catch (err) {
                 showAlert(`Error al completar el viaje: ${err.message}`, 'error');
+                await logAction('Error al completar viaje', { viajeId: viajeId, error: err.message });
                 document.getElementById('upload-form-container').classList.remove('hidden');
                 document.getElementById('upload-progress').classList.add('hidden');
             }
         };
-        
+
         // --- TRAFICO LOGIC ---
         const addCoordenadaInput = (containerId, data = { desc: '', date: '', camion_id: null, caja_id: null }) => {
             const container = document.getElementById(containerId);
             if(!container) return;
             const count = container.children.length;
-            
+
             // --- CAMBIO ---
             // Ya no leemos los valores default del formulario principal, ya que se eliminaron.
             // const formId = containerId.includes('create') ? 'create-viaje-form' : 'edit-viaje-form';
             // const formElement = document.getElementById(formId);
-            
+
             let defaultCamionId = data.camion_id;
             let defaultCajaId = data.caja_id;
 
@@ -320,32 +390,43 @@
             //     if (!defaultCajaId) defaultCajaId = formElement.querySelector('select[name="caja"]')?.value;
             // }
             // --- FIN CAMBIO ---
-            
+
             const camionesOptions = adminDropdownCache.camiones.map(c => `<option value="${c.id}" ${c.id == defaultCamionId ? 'selected' : ''}>${c.nombre_identificador}</option>`).join('');
             const cajasOptions = adminDropdownCache.cajas.map(c => `<option value="${c.id}" ${c.id == defaultCajaId ? 'selected' : ''}>${c.nombre_identificador}</option>`).join('');
 
             const div = document.createElement('div');
-            div.className = 'grid grid-cols-1 md:grid-cols-12 gap-2 items-center border p-3 rounded-md bg-white';
+            div.className = 'grid grid-cols-12 gap-2 items-center';
             div.innerHTML = `
-                <div class="col-span-12 md:col-span-4"><input type="text" name="coordenada_desc" required class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Descripción ${count + 1}" value="${data.desc}"></div>
-                <div class="col-span-12 md:col-span-3"><input type="date" name="coordenada_date" required class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${data.date}"></div>
-                <div class="col-span-12 md:col-span-2"><select name="coordenada_camion" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">${camionesOptions}</select></div>
-                <div class="col-span-12 md:col-span-2"><select name="coordenada_caja" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">${cajasOptions}</select></div>
-                <button type="button" class="remove-coordenada-btn text-red-500 hover:text-red-700 font-bold md:col-span-1 text-lg text-center">X</button>
+                <div class="col-span-4"><input type="text" name="coordenada_desc" required class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Descripción ${count + 1}" value="${data.desc}"></div>
+                <div class="col-span-2"><input type="date" name="coordenada_date" required class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${data.date}"></div>
+                <div class="col-span-2"><select name="coordenada_camion" required class="w-full px-3 py-2 border border-gray-300 rounded-md"><option value="">Camión...</option>${camionesOptions}</select></div>
+                <div class="col-span-2"><select name="coordenada_caja" required class="w-full px-3 py-2 border border-gray-300 rounded-md"><option value="">Caja...</option>${cajasOptions}</select></div>
+                <button type="button" class="remove-coordenada-btn text-red-500 hover:text-red-700 font-bold col-span-2 text-center text-lg">X</button>
             `;
             container.appendChild(div);
+        };
+
+        const loadTraficoCache = async () => {
+            if (!adminDropdownCache.choferes) {
+                const { data } = await supabase.from('profiles').select('id, full_name').eq('role', 'Chofer');
+                adminDropdownCache.choferes = data || [];
+            }
+            if (!adminDropdownCache.camiones) {
+                const { data } = await supabase.from('camiones').select('id, nombre_identificador');
+                adminDropdownCache.camiones = data || [];
+            }
+            if (!adminDropdownCache.cajas) {
+                const { data } = await supabase.from('cajas').select('id, nombre_identificador');
+                adminDropdownCache.cajas = data || [];
+            }
         };
 
         const loadTraficoData = async () => {
             const traficoContent = document.getElementById('trafico-content');
             traficoContent.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
-                // Cargar camiones y cajas primero
-                await loadAdminDropdowns();
-                
-                const { data: choferes } = await supabase.from('profiles').select('id, full_name').eq('role', 'Chofer');
-                const camionesOptions = adminDropdownCache.camiones.map(c => `<option value="${c.id}">${c.nombre_identificador}</option>`).join('');
-                const cajasOptions = adminDropdownCache.cajas.map(c => `<option value="${c.id}">${c.nombre_identificador}</option>`).join('');
+                await loadTraficoCache(); // Asegurar que los dropdowns estén cargados
+                const choferes = adminDropdownCache.choferes;
 
                 traficoContent.innerHTML = `
                     <div class="bg-gray-50 p-6 rounded-lg border">
@@ -359,7 +440,7 @@
                             <!-- FIN CAMBIO -->
                             <div>
                                 <h4 class="text-lg font-medium">Ruta</h4>
-                                <div id="coordenadas-container-create" class="mt-2 space-y-3 bg-gray-100 p-2 rounded-md"></div>
+                                <div id="coordenadas-container-create" class="mt-2 space-y-3"></div>
                                 <button type="button" class="add-coordenada-btn mt-2 text-sm bg-gray-200 hover:bg-gray-300 font-semibold py-1 px-3 rounded-lg" data-container="coordenadas-container-create">+ Agregar Coordenada</button>
                             </div>
                             <div class="pt-4"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-700">Asignar Viaje</button></div>
@@ -373,10 +454,10 @@
                  traficoContent.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
             }
         };
+
         const loadAssignedViajes = async () => {
             const listContainer = document.getElementById('assigned-viajes-list');
             listContainer.innerHTML = `<div class="loader mx-auto"></div>`;
-            // Quitada la lógica de camiones/cajas de aquí, se maneja en coordenadas
             const { data: viajes, error } = await supabase.from('viajes').select(`id, chofer:chofer_id(full_name)`).eq('status', 'Asignado').order('created_at', { ascending: false });
             if(error) { showAlert(`Error: ${error.message}`, 'error'); listContainer.innerHTML = ''; return; }
             if(viajes.length === 0) { listContainer.innerHTML = `<p class="text-gray-500">No hay viajes asignados actualmente.</p>`; return; }
@@ -384,27 +465,25 @@
                 <div class="bg-white p-4 rounded-lg border flex justify-between items-center gap-4 flex-wrap">
                     <div>
                         <p class="font-bold">Viaje #${v.id}</p>
-                        <p class="text-sm text-gray-600">Chofer: ${v.chofer.full_name}</p>
+                        <p class="text-sm text-gray-600">Chofer: ${v.chofer?.full_name || 'N/A'}</p>
                     </div>
                     <div><button class="edit-viaje-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg" data-viaje-id="${v.id}">Editar</button></div>
                 </div>`).join('');
         };
-        
+
         const openEditViajeModal = async (viajeId) => {
             const modal = document.getElementById('edit-viaje-modal');
             modal.innerHTML = `<div class="bg-white p-8 rounded-xl shadow-md w-full max-w-3xl m-auto"><div class="loader mx-auto"></div></div>`;
             modal.classList.remove('hidden');
 
             try {
-                await loadAdminDropdowns(); // Asegurar que tenemos camiones/cajas
-                
+                await loadTraficoCache(); // Asegurar que los dropdowns estén cargados
+
                 const { data: viaje, error: viajeError } = await supabase.from('viajes').select('*, coordenadas(*)').eq('id', viajeId).single();
                 if (viajeError) throw viajeError;
-                
-                const { data: choferes } = await supabase.from('profiles').select('id, full_name').eq('role', 'Chofer');
-                const camionesOptions = adminDropdownCache.camiones.map(c => `<option value="${c.id}">${c.nombre_identificador}</option>`).join('');
-                const cajasOptions = adminDropdownCache.cajas.map(c => `<option value="${c.id}">${c.nombre_identificador}</option>`).join('');
-                
+
+                const choferes = adminDropdownCache.choferes;
+
                 modal.innerHTML = `
                     <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-3xl m-auto max-h-[90vh] flex flex-col">
                          <h3 class="text-xl font-semibold mb-6 flex-shrink-0">Editar Viaje #${viajeId}</h3>
@@ -417,7 +496,7 @@
                             <!-- FIN CAMBIO -->
                             <div>
                                 <h4 class="text-lg font-medium">Ruta</h4>
-                                <div id="coordenadas-container-edit" class="mt-2 space-y-3 bg-gray-100 p-2 rounded-md"></div>
+                                <div id="coordenadas-container-edit" class="mt-2 space-y-3"></div>
                                 <button type="button" class="add-coordenada-btn mt-2 text-sm bg-gray-200 hover:bg-gray-300 font-semibold py-1 px-3 rounded-lg" data-container="coordenadas-container-edit">+ Agregar Coordenada</button>
                             </div>
                          </form>
@@ -427,10 +506,9 @@
                          </div>
                     </div>`;
 
-                // Cargar coordenadas existentes
                 viaje.coordenadas.sort((a,b)=>a.orden - b.orden).forEach(coord => {
-                    addCoordenadaInput('coordenadas-container-edit', { 
-                        desc: coord.descripcion, 
+                    addCoordenadaInput('coordenadas-container-edit', {
+                        desc: coord.descripcion,
                         date: coord.fecha_entrega,
                         camion_id: coord.camion_id,
                         caja_id: coord.caja_id
@@ -443,75 +521,126 @@
                  modal.classList.add('hidden');
             }
         };
-        
-        const handleViajeSubmit = async (event, isEdit = false) => {
-            const form = event.target;
-            const viajeId = form.dataset.viajeId;
-            const formData = new FormData(form);
-            const choferId = formData.get('chofer');
-            
-            let currentViajeId = viajeId;
 
-            if (isEdit) {
-                // Actualizar el chofer del viaje principal
-                const { error: updateError } = await supabase.from('viajes').update({
-                    chofer_id: choferId
-                }).eq('id', viajeId);
-                if (updateError) throw updateError;
-                
-                // Borrar coordenadas antiguas
-                const { error: deleteError } = await supabase.from('coordenadas').delete().eq('viaje_id', viajeId);
-                if(deleteError) throw deleteError;
+        const handleCreateViaje = async (event) => {
+             let viajeData = null; // Para guardar el ID del viaje creado
+             try {
+                const form = event.target;
+                const formData = new FormData(form);
+                const choferId = formData.get('chofer');
 
-            } else {
-                // Crear nuevo viaje solo con chofer_id y status
-                const { data: viajeData, error: viajeError } = await supabase.from('viajes').insert({
-                    chofer_id: choferId, status: 'Asignado'
+                const { data, error: viajeError } = await supabase.from('viajes').insert({
+                    chofer_id: choferId,
+                    status: 'Asignado'
                 }).select().single();
                 if (viajeError) throw viajeError;
-                currentViajeId = viajeData.id;
-            }
+                viajeData = data; // Guardar datos del viaje
 
-            // Recoger y crear nuevas coordenadas
-            const descInputs = Array.from(form.querySelectorAll('input[name="coordenada_desc"]'));
-            const dateInputs = Array.from(form.querySelectorAll('input[name="coordenada_date"]'));
-            const camionInputs = Array.from(form.querySelectorAll('select[name="coordenada_camion"]'));
-            const cajaInputs = Array.from(form.querySelectorAll('select[name="coordenada_caja"]'));
+                const descInputs = Array.from(form.querySelectorAll('input[name="coordenada_desc"]'));
+                const dateInputs = Array.from(form.querySelectorAll('input[name="coordenada_date"]'));
+                const camionInputs = Array.from(form.querySelectorAll('select[name="coordenada_camion"]'));
+                const cajaInputs = Array.from(form.querySelectorAll('select[name="coordenada_caja"]'));
 
-            const coordenadas = descInputs.map((descInput, index) => ({
-                viaje_id: currentViajeId,
-                descripcion: descInput.value,
-                fecha_entrega: dateInputs[index].value,
-                camion_id: camionInputs[index].value,
-                caja_id: cajaInputs[index].value,
-                orden: index + 1
-            })).filter(c => c.descripcion && c.fecha_entrega && c.camion_id && c.caja_id);
+                const coordenadas = descInputs.map((descInput, index) => ({
+                    viaje_id: viajeData.id,
+                    descripcion: descInput.value,
+                    fecha_entrega: dateInputs[index].value,
+                    camion_id: camionInputs[index].value,
+                    caja_id: cajaInputs[index].value,
+                    orden: index + 1
+                })).filter(c => c.descripcion && c.fecha_entrega && c.camion_id && c.caja_id);
 
-            if (coordenadas.length > 0) {
+                if (coordenadas.length === 0) {
+                    await supabase.from('viajes').delete().eq('id', viajeData.id);
+                    throw new Error("No se agregaron coordenadas válidas. El viaje no fue creado.");
+                }
+
                 const { error: coordError } = await supabase.from('coordenadas').insert(coordenadas);
-                if (coordError) throw coordError;
-            }
-            
-            if (isEdit) {
-                showAlert('¡Viaje actualizado con éxito!');
-                document.getElementById('edit-viaje-modal').classList.add('hidden');
-            } else {
+                if (coordError) {
+                    await supabase.from('viajes').delete().eq('id', viajeData.id);
+                    throw coordError;
+                }
+
+                // Log Éxito
+                await logAction('Creó Viaje', { viajeId: viajeData.id, choferId: choferId, numCoordenadas: coordenadas.length });
+
                 showAlert('¡Viaje creado y asignado con éxito!');
                 form.reset();
                 document.getElementById('coordenadas-container-create').innerHTML = '';
                 addCoordenadaInput('coordenadas-container-create');
+                await loadAssignedViajes();
+
+            } catch (err) {
+                 // Log Error
+                 await logAction('Error al crear viaje', { error: err.message, viajeIdIntentado: viajeData?.id });
+                 showAlert(`Error: ${err.message}`, 'error');
+                 console.error("Submit error (Create Viaje):", err);
+                 // No reseteamos el form si hay error
             }
-            
-            await loadAssignedViajes();
         };
 
+        const handleUpdateViaje = async (event) => {
+            const form = event.target;
+            const viajeId = form.dataset.viajeId;
+            try {
+                const formData = new FormData(form);
+                const choferId = formData.get('chofer');
+
+                // 1. Actualizar el chofer
+                const { error: updateError } = await supabase.from('viajes').update({
+                    chofer_id: choferId
+                }).eq('id', viajeId);
+                if (updateError) throw updateError;
+
+                // 2. Borrar coordenadas antiguas
+                const { error: deleteError } = await supabase.from('coordenadas').delete().eq('viaje_id', viajeId);
+                if(deleteError) throw deleteError;
+
+                // 3. Insertar las nuevas coordenadas
+                const descInputs = Array.from(form.querySelectorAll('input[name="coordenada_desc"]'));
+                const dateInputs = Array.from(form.querySelectorAll('input[name="coordenada_date"]'));
+                const camionInputs = Array.from(form.querySelectorAll('select[name="coordenada_camion"]'));
+                const cajaInputs = Array.from(form.querySelectorAll('select[name="coordenada_caja"]'));
+
+                const coordenadas = descInputs.map((descInput, index) => ({
+                    viaje_id: viajeId,
+                    descripcion: descInput.value,
+                    fecha_entrega: dateInputs[index].value,
+                    camion_id: camionInputs[index].value,
+                    caja_id: cajaInputs[index].value,
+                    orden: index + 1
+                })).filter(c => c.descripcion && c.fecha_entrega && c.camion_id && c.caja_id);
+
+                if (coordenadas.length === 0) {
+                    throw new Error("No se agregaron coordenadas válidas. La edición falló.");
+                }
+
+                const { error: coordError } = await supabase.from('coordenadas').insert(coordenadas);
+                if (coordError) throw coordError;
+
+                // Log Éxito
+                await logAction('Editó Viaje', { viajeId: viajeId, choferId: choferId, numCoordenadas: coordenadas.length });
+
+                showAlert('¡Viaje actualizado con éxito!');
+                document.getElementById('edit-viaje-modal').classList.add('hidden');
+                await loadAssignedViajes();
+
+            } catch (err) {
+                 // Log Error
+                 await logAction('Error al editar viaje', { error: err.message, viajeId: viajeId });
+                 showAlert(`Error: ${err.message}`, 'error');
+                 console.error("Submit error (Update Viaje):", err);
+            }
+        };
+
+
         // --- ADMIN LOGIC ---
-        
+
         // --- Estado de Paginación de Cajas ---
         let adminCajasCurrentPage = 1;
         // const CAJAS_PER_PAGE = 300; // Eliminado: Ahora es dinámico
         let adminCajasCache = {}; // Cache para los dropdowns
-        
+
         const openConfirmModal = (message, onConfirm) => {
             const modal = document.getElementById('confirm-modal');
             modal.innerHTML = `
@@ -537,9 +666,8 @@
                     <ol class="list-decimal list-inside space-y-2">
                         ${coordenadas.sort((a,b)=>a.orden-b.orden).map(c => `
                             <li>
-                                <span class="font-medium">${c.descripcion}</span> - ${c.fecha_entrega}
-                                <br>
-                                <span class="text-xs pl-4 text-gray-600">Camión: ${c.camiones?.nombre_identificador || 'N/A'} | Caja: ${c.cajas?.nombre_identificador || 'N/A'}</span>
+                                <span class="font-medium">${c.descripcion}</span> - ${c.fecha_entrega}<br>
+                                <span class="text-xs pl-4 text-gray-600">Vehículo: ${c.camiones?.nombre_identificador || 'N/A'} | Caja: ${c.cajas?.nombre_identificador || 'N/A'}</span>
                             </li>
                         `).join('')}
                     </ol>
@@ -556,27 +684,20 @@
             switch(selectedTab) {
                 case 'viajes': await loadAdminViajesData(); break;
                 case 'camiones': await loadAdminCamionesData(); break;
-                case 'cajas': await loadAdminCajasData(false); break; // Carga inicial
+                case 'cajas': await loadAdminCajasData(false); break;
                 case 'usuarios': await loadAdminUsersData(); break;
                 case 'reportes': await loadAdminReportsData(); break;
+                case 'logs': await loadAdminLogsData(); break; // Cargar Logs
             }
         };
-        
+
         const loadAdminViajesData = async () => {
             const container = document.getElementById('admin-content-viajes');
             container.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
-                const { data: viajes, error } = await supabase.from('viajes').select(`
-                    *, 
-                    chofer:chofer_id(full_name), 
-                    coordenadas(
-                        *,
-                        camiones(nombre_identificador),
-                        cajas(nombre_identificador)
-                    )
-                `).order('created_at', { ascending: false });
+                const { data: viajes, error } = await supabase.from('viajes').select(`*, chofer:chofer_id(full_name), coordenadas(*, camiones(nombre_identificador), cajas(nombre_identificador))`).order('created_at', { ascending: false });
                 if (error) throw error;
-                
+
                 const statusColors = {
                     Asignado: 'bg-blue-100 text-blue-800',
                     Completado: 'bg-yellow-100 text-yellow-800',
@@ -591,25 +712,22 @@
                                 <th class="py-2 px-4 text-left">ID</th>
                                 <th class="py-2 px-4 text-left">Fecha</th>
                                 <th class="py-2 px-4 text-left">Chofer</th>
-                                <th class="py-2 px-4 text-left">Unidades (1ra Parada)</th>
+                                <th class="py-2 px-4 text-left">Unidades (Ver Ruta)</th>
                                 <th class="py-2 px-4 text-center">Estado</th>
                                 <th class="py-2 px-4 text-center">Recibo</th>
                                 <th class="py-2 px-4 text-center">Ruta</th>
                             </tr></thead>
-                            <tbody>${viajes.map(v => {
-                                const primeraParada = v.coordenadas?.sort((a,b)=>a.orden-b.orden)[0];
-                                return `<tr class="border-b">
-                                    <td class="py-2 px-4 font-mono text-xs">${v.id}</td>
-                                    <td class="py-2 px-4">${new Date(v.created_at).toLocaleDateString()}</td>
-                                    <td class="py-2 px-4">${v.chofer?.full_name || 'N/A'}</td>
-                                    <td class="py-2 px-4">${primeraParada ? `${primeraParada.camiones?.nombre_identificador || 'N/A'} / ${primeraParada.cajas?.nombre_identificador || 'N/A'}` : 'N/A'}</td>
-                                    <td class="py-2 px-4 text-center"><span class="py-1 px-3 rounded-full font-medium text-xs ${statusColors[v.status] || ''}">${v.status}</span></td>
-                                    <td class="py-2 px-4 text-center">${v.recibo_diesel_url ? `<a href="${v.recibo_diesel_url}" target="_blank" class="text-blue-500 hover:underline">Ver</a>` : 'Pendiente'}</td>
-                                    <td class="py-2 px-4 text-center"><button class="view-route-btn text-blue-500 hover:underline" data-viaje-id="${v.id}">Ver</button></td>
-                                </tr>`
-                            }).join('')}</tbody>
+                            <tbody>${viajes.map(v => `<tr class="border-b">
+                                <td class="py-2 px-4 font-mono text-xs">${v.id}</td>
+                                <td class="py-2 px-4">${new Date(v.created_at).toLocaleDateString()}</td>
+                                <td class="py-2 px-4">${v.chofer?.full_name || 'N/A'}</td>
+                                <td class="py-2 px-4 text-center">--</td>
+                                <td class="py-2 px-4 text-center"><span class="py-1 px-3 rounded-full font-medium text-xs ${statusColors[v.status] || ''}">${v.status}</span></td>
+                                <td class="py-2 px-4 text-center">${v.recibo_diesel_url ? `<a href="${v.recibo_diesel_url}" target="_blank" class="text-blue-500 hover:underline">Ver</a>` : 'Pendiente'}</td>
+                                <td class="py-2 px-4 text-center"><button class="view-route-btn text-blue-500 hover:underline" data-viaje-id="${v.id}">Ver</button></td>
+                            </tr>`).join('')}</tbody>
                         </table></div>`}`;
-                
+
                 document.querySelectorAll('.view-route-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const viaje = viajes.find(v => v.id == btn.dataset.viajeId);
@@ -622,49 +740,27 @@
             }
         };
 
-        // --- INICIO: LÓGICA DE GESTIÓN DE CAMIONES ---
-        const loadAdminCamionesData = async () => { 
-            const container = document.getElementById('admin-content-camiones');
-            container.innerHTML = `<div class="loader mx-auto"></div>`;
+        const loadAdminCamionesData = async () => {
+            const fleetContainer = document.getElementById('admin-content-camiones');
+            fleetContainer.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
                 const { data: camiones } = await supabase.from('camiones').select('*');
-                container.innerHTML = `
+                fleetContainer.innerHTML = `
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div>
-                            <h3 class="text-xl font-semibold mb-4">Agregar Nuevo Camión</h3>
-                             <form id="admin-add-camion-form" class="bg-gray-50 p-4 rounded-lg space-y-4">
-                                <div>
-                                    <label class="block text-sm">Nombre Identificador</label>
-                                    <input type="text" name="nombre" placeholder="Ej. C-01" required class="w-full mt-1 p-2 border rounded-md">
-                                </div>
-                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Agregar Camión</button>
-                             </form>
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-semibold mb-4">Camiones Existentes</h3>
-                            <div class="space-y-2 max-h-96 overflow-y-auto pr-2">${camiones.map(c => `
-                                <div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center">
-                                    <span>${c.nombre_identificador}</span>
-                                    <button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="camiones">Eliminar</button>
-                                </div>`).join('')}
-                            </div>
+                            <h3 class="text-xl font-semibold mb-4">Camiones</h3>
+                            <form id="admin-add-camion-form" class="flex gap-2 mb-4">
+                                <input type="text" name="nombre_identificador" placeholder="Nuevo Camión (ej. C-01)" required class="flex-grow px-3 py-2 border rounded-lg">
+                                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">+</button>
+                            </form>
+                            <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">${camiones.map(c => `<div class="bg-gray-50 p-2 rounded-lg flex justify-between items-center"><span>${c.nombre_identificador}</span><button class="delete-fleet-btn text-red-500 hover:text-red-700" data-id="${c.id}" data-type="camiones">Eliminar</button></div>`).join('')}</div>
                         </div>
                     </div>`;
             } catch(err) {
                 showAlert(`Error al cargar la flota: ${err.message}`, 'error');
-                container.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+                fleetContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
             }
         };
-        
-        const handleCamionAdd = async (event) => {
-             const form = event.target;
-             const nombre = form.nombre.value;
-             const { error } = await supabase.from('camiones').insert({ nombre_identificador: nombre });
-             if (error) { showAlert(`Error: ${error.message}`, 'error'); }
-             else { showAlert('¡Camión agregado con éxito!'); form.reset(); await loadAdminCamionesData(); await loadAdminDropdowns(true); } // Recargar dropdowns
-        };
-        // --- FIN: LÓGICA DE GESTIÓN DE CAMIONES ---
-
 
         // --- INICIO: LÓGICA DE GESTIÓN DE CAJAS (PAGINADA) ---
 
@@ -675,11 +771,11 @@
             if (!adminCajasCache.propiedad || !adminCajasCache.propietario) {
                 // const { data: propiedades } = await supabase.from('distinct_caja_propiedad').select('propiedad'); // Eliminado
                 // const { data: propietarios } = await supabase.from('distinct_caja_propietario').select('propietario'); // Eliminado
-                
+
                 // --- FIX: Añadir (|| []) para evitar el error .map() en null ---
                 // adminCajasCache.propiedad = [...new Set((propiedades || []).map(item => item.propiedad).filter(Boolean))].sort(); // Eliminado
                 // adminCajasCache.propietario = [...new Set((propietarios || []).map(item => item.propietario).filter(Boolean))].sort(); // Eliminado
-                
+
                 // Marcamos como cargado para no re-intentar
                 adminCajasCache.propiedad = [];
                 adminCajasCache.propietario = [];
@@ -687,9 +783,8 @@
 
             container.innerHTML = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <!-- Columna de Formulario -->
                     <div>
-                        <h3 class="text-xl font-semibold mb-4">Agregar Nueva Caja</h3>
+                         <h3 class="text-xl font-semibold mb-4">Agregar Caja</h3>
                          <form id="admin-add-caja-form" class="bg-gray-50 p-4 rounded-lg space-y-3">
                             <div>
                                 <label class="block text-sm">Nombre/Número</label>
@@ -723,15 +818,13 @@
                                 <label class="block text-sm">Propietario</label>
                                 <input type="text" name="propietario" required class="w-full mt-1 p-2 border rounded-md text-sm">
                             </div>
-                            <div>
+                             <div>
                                 <label class="block text-sm">Estatus</label>
                                 <input type="text" name="estatus" required class="w-full mt-1 p-2 border rounded-md text-sm">
                             </div>
                             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Agregar Caja</button>
                          </form>
                     </div>
-
-                    <!-- Columna de Lista -->
                     <div class="md:col-span-2">
                         <h4 class="font-semibold text-lg mb-2">Lista de Cajas Existentes</h4>
                         <!-- Filtros -->
@@ -742,19 +835,22 @@
                             </div>
                             <!-- Filtros de Propiedad y Propietario eliminados -->
                         </div>
-                        
+
                         <!-- Leyenda de conteo -->
-                        <div id="cajas-count-legend" class="text-sm text-gray-600 mb-2">Cargando...</div>
-                        
-                        <!-- Contenedor de la lista -->
-                        <div id="cajas-list-container" class="space-y-2 max-h-[60vh] overflow-y-auto pr-2 border rounded-lg p-2 bg-white">
+                        <div id="cajas-filter-legend" class="text-sm text-gray-600 mb-2">
+                            Mostrando <span id="cajas-showing-count" class="font-bold">0</span> de <span id="cajas-total-count" class="font-bold">0</span> cajas.
+                        </div>
+
+                        <!-- Lista de Cajas -->
+                        <div id="cajas-list-container" class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+                            <!-- Las tarjetas de caja se insertarán aquí -->
                             <div class="loader mx-auto"></div>
                         </div>
 
                         <!-- Paginación -->
                         <div class="flex flex-wrap justify-between items-center mt-4 gap-4">
                             <button id="cajas-prev-page" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">&lt; Anterior</button>
-                            
+
                             <div class="flex items-center gap-4">
                                 <!-- Nuevo: Selector de registros por página -->
                                 <div class="flex items-center gap-2">
@@ -769,7 +865,7 @@
                                 </div>
                                 <span class="text-sm font-medium">Página <span id="cajas-current-page">1</span> de <span id="cajas-total-pages">1</span></span>
                             </div>
-                            
+
                             <button id="cajas-next-page" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">Siguiente &gt;</button>
                         </div>
                     </div>
@@ -781,34 +877,35 @@
             // Listeners de dropdowns eliminados
             // document.getElementById('caja-filter-propiedad').addEventListener('change', () => { adminCajasCurrentPage = 1; loadAdminCajasData(true); });
             // document.getElementById('caja-filter-propietario').addEventListener('change', () => { adminCajasCurrentPage = 1; loadAdminCajasData(true); });
-            
+
             // Nuevo listener para el selector de "por página"
             document.getElementById('cajas-per-page').addEventListener('change', () => { adminCajasCurrentPage = 1; loadAdminCajasData(true); });
 
             document.getElementById('cajas-prev-page').addEventListener('click', () => { if (adminCajasCurrentPage > 1) { adminCajasCurrentPage--; loadAdminCajasData(true); } });
             document.getElementById('cajas-next-page').addEventListener('click', () => { adminCajasCurrentPage++; loadAdminCajasData(true); });
-            
+
             // Filtro default eliminado
             // document.getElementById('caja-filter-propiedad').value = 'Propio';
         };
 
         // Carga y recarga los DATOS de las cajas (la lista)
-        // isFilterChange = true si es por un filtro, false si es la carga inicial de la pestaña
-        const loadAdminCajasData = async (isFilterChange = false) => {
+        const loadAdminCajasData = async (isFilterOrPageChange = false) => {
             const container = document.getElementById('admin-content-cajas');
-            
-            // 1. Dibuja el layout si es la primera vez (carga de pestaña)
-            if (!isFilterChange) {
-                adminCajasCurrentPage = 1; // Resetea página
-                container.innerHTML = `<div class="loader mx-auto"></div>`; // Loader principal
+
+            // Si la estructura no existe (primera carga), dibujarla.
+            if (!document.getElementById('cajas-list-container') || !isFilterOrPageChange) {
                 await drawCajasLayout(container);
             }
-            
-            // 2. Mostrar loader en la lista mientras se cargan los datos
+
             const listContainer = document.getElementById('cajas-list-container');
-            const legendContainer = document.getElementById('cajas-count-legend');
+            const legendShowing = document.getElementById('cajas-showing-count');
+            const legendTotal = document.getElementById('cajas-total-count');
+            const currentPageSpan = document.getElementById('cajas-current-page');
+            const totalPagesSpan = document.getElementById('cajas-total-pages');
+            const prevBtn = document.getElementById('cajas-prev-page');
+            const nextBtn = document.getElementById('cajas-next-page');
+
             listContainer.innerHTML = `<div class="loader mx-auto"></div>`;
-            legendContainer.textContent = 'Cargando...';
 
             try {
                 // 1. Recoger filtros
@@ -816,7 +913,7 @@
                 // Filtros de propiedad y propietario eliminados
                 // const propiedadFilter = document.getElementById('caja-filter-propiedad').value;
                 // const propietarioFilter = document.getElementById('caja-filter-propietario').value;
-                
+
                 // Nuevo: Leer el valor de "por página"
                 const perPage = parseInt(document.getElementById('cajas-per-page').value, 10) || 500;
 
@@ -844,24 +941,26 @@
                 const { data: cajas, error, count } = await query;
                 if (error) throw error;
 
-                // 5. Dibujar la lista de cajas
+                // 5. Renderizar lista
                 if (cajas.length === 0) {
-                    listContainer.innerHTML = '<p class="text-gray-500 text-center p-4">No se encontraron cajas con esos filtros.</p>';
+                    listContainer.innerHTML = `<p class="text-gray-500 p-4 text-center">No se encontraron cajas con esos filtros.</p>`;
                 } else {
                     listContainer.innerHTML = cajas.map(c => `
-                        <div class="caja-card bg-gray-50 p-3 rounded-lg border" 
-                             data-id="${c.id}">
+                        <div class="caja-card bg-gray-50 p-3 rounded-lg border">
                             <div class="flex justify-between items-start">
-                                <div class="w-3/4">
-                                    <p class="font-bold text-base text-blue-800">${c.nombre_identificador}</p>
-                                    <p class="text-sm font-medium text-gray-700">Placa: ${c.placa || 'N/A'}</p>
-                                    <p class="text-xs text-gray-600">${c.tipo || 'N/A'} | Medida: ${c.medida || 'N/A'} | ${c.estatus || 'N/A'}</p>
-                                    <p class="text-xs text-gray-500">${c.propiedad || 'N/A'} - ${c.propietario || 'N/A'}</p>
+                                <h5 class="font-bold text-base">${c.nombre_identificador}</h5>
+                                <div class="flex gap-3">
+                                    <button class="edit-caja-btn text-blue-500 hover:text-blue-700 text-sm font-medium" data-caja-id="${c.id}">Editar</button>
+                                    <button class="delete-fleet-btn text-red-500 hover:text-red-700 text-sm font-medium" data-id="${c.id}" data-type="cajas">Eliminar</button>
                                 </div>
-                                <div class="flex flex-col gap-2 items-end">
-                                    <button class="edit-caja-btn text-xs bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-1 px-3 rounded-full" data-id="${c.id}">Editar</button>
-                                    <button class="delete-fleet-btn text-xs bg-red-500 hover:bg-red-600 text-white font-semibold py-1 px-3 rounded-full" data-id="${c.id}" data-type="cajas">Eliminar</button>
-                                </div>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-600 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+                                <span><span class="font-medium">Placa:</span> ${c.placa || 'N/A'}</span>
+                                <span><span class="font-medium">Tipo:</span> ${c.tipo || 'N/A'}</span>
+                                <span><span class="font-medium">Medida:</span> ${c.medida || 'N/A'}</span>
+                                <span><span class="font-medium">Propiedad:</span> ${c.propiedad || 'N/A'}</span>
+                                <span><span class="font-medium">Propietario:</span> ${c.propietario || 'N/A'}</span>
+                                <span><span class="font-medium">Estatus:</span> ${c.estatus || 'N/A'}</span>
                             </div>
                         </div>
                     `).join('');
@@ -869,43 +968,69 @@
 
                 // 6. Actualizar UI de paginación
                 const totalPages = Math.ceil(count / perPage);
-                document.getElementById('cajas-current-page').textContent = adminCajasCurrentPage;
-                document.getElementById('cajas-total-pages').textContent = totalPages > 0 ? totalPages : 1;
-                document.getElementById('cajas-prev-page').disabled = (adminCajasCurrentPage <= 1);
-                document.getElementById('cajas-next-page').disabled = (adminCajasCurrentPage >= totalPages);
+                legendShowing.textContent = cajas.length;
+                legendTotal.textContent = count;
+                currentPageSpan.textContent = adminCajasCurrentPage;
+                totalPagesSpan.textContent = totalPages > 0 ? totalPages : 1;
 
-                // 7. Actualizar leyenda
-                const startRecord = Math.min((adminCajasCurrentPage - 1) * perPage + 1, count);
-                const endRecord = Math.min(adminCajasCurrentPage * perPage, count);
-                legendContainer.textContent = (count > 0) ? `Mostrando ${startRecord} - ${endRecord} de ${count} cajas` : 'Mostrando 0 cajas';
-                
+                prevBtn.disabled = adminCajasCurrentPage <= 1;
+                nextBtn.disabled = adminCajasCurrentPage >= totalPages;
+
             } catch (err) {
-                showAlert(`Error al cargar las cajas: ${err.message}`, 'error');
-                listContainer.innerHTML = `<p class="text-red-500 text-center p-4">No se pudieron cargar los datos.</p>`;
-                legendContainer.textContent = 'Error al cargar';
+                 showAlert(`Error al cargar las cajas: ${err.message}`, 'error');
+                 listContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+            }
+        };
+
+        const handleCamionAdd = async (event) => {
+            const form = event.target;
+            const formData = new FormData(form);
+            const nombre = formData.get('nombre_identificador');
+            try {
+                 const { data, error } = await supabase.from('camiones').insert({
+                    nombre_identificador: nombre
+                 }).select().single(); // select() para obtener el ID
+                 if (error) throw error;
+
+                 await logAction('Agregó Camión', { camionId: data.id, nombre: nombre });
+                 showAlert('¡Camión agregado con éxito!');
+                 form.reset();
+                 await loadAdminCamionesData();
+            } catch (err) {
+                 await logAction('Error al agregar camión', { error: err.message, nombreIntento: nombre });
+                 showAlert(`Error: ${err.message}`, 'error');
             }
         };
 
         const handleCajaAdd = async (event) => {
-             const form = event.target;
-             const formData = new FormData(form);
-             const newCaja = {
-                nombre_identificador: formData.get('nombre_identificador'),
-                placa: formData.get('placa'),
-                tipo: formData.get('tipo'),
-                medida: formData.get('medida'),
-                num_llantas: formData.get('num_llantas'),
-                origen: formData.get('origen'),
-                propiedad: formData.get('propiedad'),
-                propietario: formData.get('propietario'),
-                estatus: formData.get('estatus'),
-             };
-             
-             const { error } = await supabase.from('cajas').insert(newCaja);
-             if (error) { showAlert(`Error: ${error.message}`, 'error'); }
-             else { showAlert('¡Caja agregada con éxito!'); form.reset(); await loadAdminCajasData(true); await loadAdminDropdowns(true); } // Recargar datos
+            const form = event.target;
+            const formData = new FormData(form);
+            const nombre = formData.get('nombre_identificador'); // Para log en caso de error
+            try {
+                 const newCaja = {
+                    nombre_identificador: nombre,
+                    placa: formData.get('placa'),
+                    tipo: formData.get('tipo'),
+                    medida: formData.get('medida'),
+                    num_llantas: formData.get('num_llantas'),
+                    origen: formData.get('origen'),
+                    propiedad: formData.get('propiedad'),
+                    propietario: formData.get('propietario'),
+                    estatus: formData.get('estatus'),
+                 };
+                 const { data, error } = await supabase.from('cajas').insert(newCaja).select().single();
+                 if (error) throw error;
+
+                 await logAction('Agregó Caja', { cajaId: data.id, nombre: nombre });
+                 showAlert('¡Caja agregada con éxito!');
+                 form.reset();
+                 await loadAdminCajasData(true); // true = recargar
+            } catch (err) {
+                 await logAction('Error al agregar caja', { error: err.message, nombreIntento: nombre });
+                 showAlert(`Error: ${err.message}`, 'error');
+            }
         };
-        
+
         const openEditCajaModal = async (cajaId) => {
             const modal = document.getElementById('edit-caja-modal');
             modal.innerHTML = `<div class="bg-white p-8 rounded-xl shadow-md w-full max-w-lg m-auto"><div class="loader mx-auto"></div></div>`;
@@ -914,7 +1039,7 @@
             try {
                 const { data: caja, error } = await supabase.from('cajas').select('*').eq('id', cajaId).single();
                 if (error) throw error;
-                
+
                 modal.innerHTML = `
                     <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-lg m-auto max-h-[90vh] flex flex-col">
                          <h3 class="text-xl font-semibold mb-6 flex-shrink-0">Editar Caja #${caja.nombre_identificador}</h3>
@@ -972,89 +1097,55 @@
             const form = event.target;
             const cajaId = form.dataset.cajaId;
             const formData = new FormData(form);
-             const updatedCaja = {
-                nombre_identificador: formData.get('nombre_identificador'),
-                placa: formData.get('placa'),
-                tipo: formData.get('tipo'),
-                medida: formData.get('medida'),
-                num_llantas: formData.get('num_llantas'),
-                origen: formData.get('origen'),
-                propiedad: formData.get('propiedad'),
-                propietario: formData.get('propietario'),
-                estatus: formData.get('estatus'),
-             };
-            
-            const { error } = await supabase.from('cajas').update(updatedCaja).eq('id', cajaId);
-            if (error) { showAlert(`Error: ${error.message}`, 'error'); }
-            else { 
-                showAlert('¡Caja actualizada con éxito!'); 
-                document.getElementById('edit-caja-modal').classList.add('hidden');
-                await loadAdminCajasData(true); // Recargar datos
-                await loadAdminDropdowns(true); // Recargar dropdowns por si cambió el nombre
+            const nombre = formData.get('nombre_identificador'); // Para log
+            try {
+                const updatedCaja = {
+                    nombre_identificador: nombre,
+                    placa: formData.get('placa'),
+                    tipo: formData.get('tipo'),
+                    medida: formData.get('medida'),
+                    num_llantas: formData.get('num_llantas'),
+                    origen: formData.get('origen'),
+                    propiedad: formData.get('propiedad'),
+                    propietario: formData.get('propietario'),
+                    estatus: formData.get('estatus'),
+                 };
+                 const { error } = await supabase.from('cajas').update(updatedCaja).eq('id', cajaId);
+                 if (error) throw error;
+
+                 await logAction('Editó Caja', { cajaId: cajaId, nombre: nombre });
+                 showAlert('¡Caja actualizada con éxito!');
+                 document.getElementById('edit-caja-modal').classList.add('hidden');
+                 await loadAdminCajasData(true); // true = recargar
+            } catch (err) {
+                 await logAction('Error al editar caja', { error: err.message, cajaId: cajaId });
+                 showAlert(`Error: ${err.message}`, 'error');
             }
         };
 
-        const handleFleetDelete = async (id, type) => {
-            // Lógica de validación mejorada para 'cajas'
-            if (type === 'cajas') {
-                try {
-                    // 1. Verificar si la caja está en un viaje 'Asignado'
-                    const { data: viajes, error: searchError } = await supabase
-                        .from('coordenadas')
-                        .select('viaje_id, viajes(status)')
-                        .eq('caja_id', id);
-                    
-                    if (searchError) throw searchError;
-
-                    // 2. Filtrar solo los viajes que están 'Asignados'
-                    const viajesActivos = viajes.filter(v => v.viajes.status === 'Asignado');
-
-                    if (viajesActivos.length > 0) {
-                        showAlert('No se puede eliminar: La caja está asignada a un viaje activo.', 'error');
-                        return;
-                    }
-
-                    // 3. Si no hay viajes activos, proceder con la confirmación de borrado
-                    openConfirmModal(`¿Seguro que quieres eliminar esta caja?`, async () => {
-                        const { error } = await supabase.from('cajas').delete().eq('id', id);
-                        if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
-                        else { showAlert('Caja eliminada.'); await loadAdminCajasData(true); await loadAdminDropdowns(true); } // Recargar datos
-                        closeConfirmModal();
-                    });
-
-                } catch (err) {
-                    showAlert(`Error al verificar la caja: ${err.message}`, 'error');
-                }
-            
-            } else if (type === 'camiones') {
-                // Lógica simple de confirmación para 'camiones'
-                openConfirmModal(`¿Seguro que quieres eliminar este camión?`, async () => {
-                    const { error } = await supabase.from(type).delete().eq('id', id);
-                    if (error) { showAlert(`Error: ${error.message}`, 'error'); } 
-                    else { showAlert('Camión eliminado.'); await loadAdminCamionesData(); await loadAdminDropdowns(true); }
-                    closeConfirmModal();
-                });
-            }
-        };
         // --- FIN: LÓGICA DE GESTIÓN DE CAJAS ---
 
-
-        const loadAdminUsersData = async () => { 
+        const loadAdminUsersData = async () => {
              const usersContainer = document.getElementById('admin-content-usuarios');
             usersContainer.innerHTML = `<div class="loader mx-auto"></div>`;
             try {
-                const { data: profiles } = await supabase.from('profiles').select('*');
+                const { data: profiles, error } = await supabase.from('profiles').select('*');
+                if (error) throw error;
+
+                // Contador
+                const totalUsers = profiles.length;
+
                 usersContainer.innerHTML = `
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div>
-                        <h3 class="text-xl font-semibold mb-4">Usuarios Activos</h3>
-                        <div class="space-y-2 max-h-96 overflow-y-auto pr-2">${profiles.map(u => `
+                        <h3 class="text-xl font-semibold mb-4">Usuarios Activos (${totalUsers})</h3>
+                        <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">${profiles.map(u => `
                             <div class="bg-gray-50 p-3 rounded-lg flex justify-between items-center">
                                 <div>
                                     <p class="font-semibold">${u.full_name || 'N/A'}</p>
-                                    <p class="text-sm text-gray-500">${u.role || 'N/A'} ${u.role === 'Chofer' ? `| ${u.tipo_operador || 'N/A'}`: ''}</p>
+                                    <p class="text-sm text-gray-500">@${u.username || 'N/A'} | ${u.role || 'N/A'} ${u.role === 'Chofer' ? `(${u.tipo_operador || 'N/A'})`: ''}</p>
                                 </div>
-                                <button class="delete-user-btn text-red-500 hover:text-red-700" data-user-id="${u.id}">Eliminar</button>
+                                <button class="delete-user-btn text-red-500 hover:text-red-700" data-user-id="${u.id}">Eliminar Perfil</button>
                             </div>`).join('')}
                         </div>
                     </div>
@@ -1062,7 +1153,11 @@
                          <h3 class="text-xl font-semibold mb-4">Crear Nuevo Usuario</h3>
                          <form id="create-user-form" class="bg-gray-50 p-4 rounded-lg space-y-4">
                             <div><label class="block text-sm">Nombre Completo</label><input type="text" name="fullname" required class="w-full mt-1 p-2 border rounded-md"></div>
-                            <div><label class="block text-sm">Correo Electrónico</label><input type="email" name="email" required class="w-full mt-1 p-2 border rounded-md"></div>
+
+                            <!-- CAMBIO: Eliminado el campo de Email. Solo se pide Usuario. -->
+                            <!-- <div><label class="block text-sm">Correo Electrónico (real)</label><input type="email" name="email" required class="w-full mt-1 p-2 border rounded-md"></div> -->
+                            <div><label class="block text-sm">Nombre de Usuario</label><input type="text" name="username" required class="w-full mt-1 p-2 border rounded-md"></div>
+
                             <div><label class="block text-sm">Contraseña</label><input type="password" name="password" required class="w-full mt-1 p-2 border rounded-md"></div>
                             <div>
                                 <label class="block text-sm">Rol</label>
@@ -1073,11 +1168,25 @@
                             <div id="tipo-operador-container">
                                 <label class="block text-sm">Tipo de Operador (Si es Chofer)</label>
                                 <select name="tipo_operador" class="w-full mt-1 p-2 border rounded-md">
-                                    <option value="Local">Local</option><option value="Cruce">Cruce</option><option value="Foráneo Chihuahua">Foráneo Chihuahua</option><option value="Foráneo Pacífico">Foráneo Pacífico</tr >
+                                    <option value="Local">Local</option><option value="Cruce">Cruce</option><option value="Foráneo Chihuahua">Foráneo Chihuahua</option><option value="Foráneo Pacífico">Foráneo Pacífico</option>
                                 </select>
                             </div>
                             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Crear Usuario</button>
                          </form>
+
+                         <!-- NUEVO: Botón de Carga Masiva -->
+                         <div class="mt-6">
+                            <h3 class="text-xl font-semibold mb-4">Carga Masiva</h3>
+                            <div class="bg-gray-50 p-4 rounded-lg space-y-4">
+                                <p class="text-sm text-gray-600">Crea los 117 choferes de la lista pre-cargada. Esto puede tardar varios minutos. No cierres esta ventana.</p>
+                                <button id="bulk-create-users-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg">Crear 117 Choferes (Carga Masiva)</button>
+                                <div id="bulk-create-progress" class="hidden text-sm font-medium text-center">
+                                    <div class="loader mx-auto my-2"></div>
+                                    <p id="bulk-create-status">Procesando... por favor espera.</p>
+                                </div>
+                            </div>
+                         </div>
+                         <!-- FIN NUEVO -->
                     </div>
                 </div>`;
 
@@ -1091,8 +1200,10 @@
             } catch (err) {
                  showAlert(`Error al cargar usuarios: ${err.message}`, 'error');
                  usersContainer.innerHTML = `<p class="text-red-500">No se pudieron cargar los datos.</p>`;
+                 if (currentUser) await logAction('Error al cargar usuarios', { error: err.message });
             }
         };
+
         const loadAdminReportsData = async () => {
             const container = document.getElementById('admin-content-reportes');
             container.innerHTML = `
@@ -1100,243 +1211,646 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="bg-gray-50 p-6 rounded-lg">
                         <h4 class="font-semibold text-lg mb-2">Reporte de Viajes Asignados</h4>
-                        <p class="text-gray-600 mb-4 text-sm">Descarga una lista de todos los viajes que están actualmente en curso y pendientes de completar por los choferes.</p>
+                        <p class="text-gray-600 mb-4 text-sm">Descarga una lista de todos los viajes que están actualmente en curso.</p>
                         <button data-status="Asignado" class="download-report-btn w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Asignados</button>
                     </div>
                     <div class="bg-gray-50 p-6 rounded-lg">
                         <h4 class="font-semibold text-lg mb-2">Reporte de Viajes Completados</h4>
-                        <p class="text-gray-600 mb-4 text-sm">Descarga un historial de todos los viajes que han sido completados, incluyendo los que ya han sido pagados.</p>
+                        <p class="text-gray-600 mb-4 text-sm">Descarga un historial de todos los viajes que han sido completados (incluye pagados).</p>
                         <button data-status="Completado" class="download-report-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Completados y Pagados</button>
                     </div>
-                    <!-- Nuevo Reporte de Cajas -->
-                    <div class="bg-gray-50 p-6 rounded-lg">
+                     <div class="bg-gray-50 p-6 rounded-lg">
                         <h4 class="font-semibold text-lg mb-2">Reporte General de Cajas</h4>
-                        <p class="text-gray-600 mb-4 text-sm">Descarga la lista completa de todas las cajas registradas en el sistema (puede tardar unos segundos).</p>
-                        <button data-type="cajas" class="download-report-btn w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Reporte de Cajas</button>
+                        <p class="text-gray-600 mb-4 text-sm">Descarga una lista completa de todas las cajas registradas en el sistema.</p>
+                        <button data-status="Cajas" class="download-report-btn w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Reporte de Cajas</button>
                     </div>
                 </div>
             `;
         };
-        const handleDownloadReport = async (button) => {
-            const status = button.dataset.status;
-            const type = button.dataset.type;
 
-            if (type === 'cajas') {
-                await handleDownloadCajasReport(button);
-                return;
-            }
+        const fetchAllPages = async (queryBuilder) => {
+            let allData = [];
+            let currentPage = 0;
+            const pageSize = 1000;
+            let keepFetching = true;
 
-            // Lógica existente para reportes de viajes
-            const statuses = status === 'Completado' ? ['Completado', 'Pagado'] : [status];
-            button.disabled = true;
-            button.textContent = 'Generando...';
-            showAlert('Generando reporte, por favor espera...');
-            
-            try {
-                const { data: viajes, error } = await supabase.from('viajes').select(`
-                    *, 
-                    chofer:chofer_id(full_name), 
-                    coordenadas(
-                        *,
-                        camiones(nombre_identificador),
-                        cajas(nombre_identificador)
-                    )
-                `).in('status', statuses).order('created_at', { ascending: false });
-                
+            while (keepFetching) {
+                // --- FIX: Remove extra underscore ---
+                const { data, error } = await queryBuilder.range(currentPage * pageSize, (currentPage + 1) * pageSize - 1);
+                // --- END FIX ---
                 if (error) throw error;
-                if (viajes.length === 0) { showAlert('No hay datos para generar este reporte.', 'error'); return; }
 
-                const reportData = [];
-                viajes.forEach(v => {
-                    const baseData = {
-                        'ID Viaje': v.id,
-                        'Fecha': new Date(v.created_at).toLocaleDateString(),
-                        'Chofer': v.chofer?.full_name,
-                        'Estado': v.status,
-                        'URL Recibo': v.recibo_diesel_url,
-                        'Pago Total': v.pago_total,
-                        'Desglose Pago': v.pago_desglose ? JSON.stringify(v.pago_desglose) : ''
-                    };
+                allData = allData.concat(data);
 
-                    if (v.coordenadas && v.coordenadas.length > 0) {
-                        v.coordenadas.sort((a, b) => a.orden - b.orden);
-                        v.coordenadas.forEach((coord, index) => {
-                            baseData[`Parada ${index + 1} - Descripcion`] = coord.descripcion;
-                            baseData[`Parada ${index + 1} - Fecha`] = coord.fecha_entrega;
-                            baseData[`Parada ${index + 1} - Camion`] = coord.camiones?.nombre_identificador;
-                            baseData[`Parada ${index + 1} - Caja`] = coord.cajas?.nombre_identificador;
-                        });
-                    }
-                    
-                    reportData.push(baseData);
-                });
-                
-                const worksheet = XLSX.utils.json_to_sheet(reportData);
-                const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "Viajes");
-                const fileName = `Reporte_Viajes_${statuses.join('_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
-                XLSX.writeFile(workbook, fileName);
-
-            } catch (err) { showAlert(`Error al generar el reporte: ${err.message}`, 'error'); }
-            finally {
-                button.disabled = false;
-                button.textContent = status === 'Completado' ? 'Descargar Completados y Pagados' : 'Descargar Asignados';
+                if (data.length < pageSize) {
+                    keepFetching = false;
+                } else {
+                    currentPage++;
+                }
             }
+            return allData;
         };
 
-        // Nueva función para el reporte de cajas con paginación
-        const handleDownloadCajasReport = async (button) => {
-            button.disabled = true;
-            button.textContent = 'Generando... (0%)';
-            showAlert('Generando reporte de cajas. Esto puede tardar...');
+        const handleDownloadReport = async (reportType) => {
+            showAlert('Generando reporte, por favor espera... Esto puede tardar.');
+            let reportData = [];
+            let fileName = `Reporte_${reportType}_${new Date().toISOString().split('T')[0]}.xlsx`;
 
             try {
-                const BATCH_SIZE = 1000;
-                let allCajas = [];
-                let rangeStart = 0;
-                let hasMore = true;
-                let totalCount = 0;
+                if (reportType === 'Cajas') {
+                    // Reporte de Cajas
+                    const query = supabase.from('cajas').select('*');
+                    const cajas = await fetchAllPages(query);
+                    reportData = cajas.map(c => ({
+                        'Nombre': c.nombre_identificador,
+                        'Placa': c.placa,
+                        'Tipo': c.tipo,
+                        'Medida': c.medida,
+                        'Num Llantas': c.num_llantas,
+                        'Origen': c.origen,
+                        'Propiedad': c.propiedad,
+                        'Propietario': c.propietario,
+                        'Estatus': c.estatus,
+                        'ID': c.id,
+                        'Fecha Creación': c.created_at
+                    }));
 
-                // 1. Obtener el conteo total primero
-                const { count, error: countError } = await supabase.from('cajas').select('*', { count: 'exact', head: true });
-                if (countError) throw countError;
-                totalCount = count;
-                if (totalCount === 0) {
-                    showAlert('No hay cajas para reportar.', 'error');
+                } else {
+                    // Reportes de Viajes
+                    const statuses = reportType === 'Completado' ? ['Completado', 'Pagado'] : [reportType];
+                    const query = supabase.from('viajes').select(`*, chofer:chofer_id(full_name), coordenadas(*, camiones(nombre_identificador), cajas(nombre_identificador))`).in('status', statuses);
+                    const viajes = await fetchAllPages(query);
+
+                    if (viajes.length === 0) {
+                        showAlert('No hay datos para generar este reporte.', 'error');
+                        return;
+                    }
+
+                    reportData = viajes.flatMap(v => { // Usar flatMap para manejar múltiples paradas
+                        if (!v.coordenadas || v.coordenadas.length === 0) {
+                            // Si un viaje no tiene paradas, mostrarlo una vez
+                            return {
+                                'ID Viaje': v.id,
+                                'Fecha': new Date(v.created_at).toLocaleDateString(),
+                                'Chofer': v.chofer?.full_name,
+                                'Estado': v.status,
+                                'URL Recibo': v.recibo_diesel_url,
+                                'Parada (Orden)': 'N/A',
+                                'Parada (Desc)': 'N/A',
+                                'Parada (Fecha)': 'N/A',
+                                'Parada (Camión)': 'N/A',
+                                'Parada (Caja)': 'N/A'
+                            };
+                        }
+
+                        v.coordenadas.sort((a, b) => a.orden - b.orden);
+                        return v.coordenadas.map(coord => ({
+                            'ID Viaje': v.id,
+                            'Fecha': new Date(v.created_at).toLocaleDateString(),
+                            'Chofer': v.chofer?.full_name,
+                            'Estado': v.status,
+                            'URL Recibo': v.recibo_diesel_url,
+                            'Parada (Orden)': coord.orden,
+                            'Parada (Desc)': coord.descripcion,
+                            'Parada (Fecha)': coord.fecha_entrega,
+                            'Parada (Camión)': coord.camiones?.nombre_identificador || 'N/A',
+                            'Parada (Caja)': coord.cajas?.nombre_identificador || 'N/A'
+                        }));
+                    });
+                }
+
+                if (reportData.length === 0) {
+                    showAlert('No hay datos para generar este reporte.', 'error');
                     return;
                 }
 
-                // 2. Traer los datos en lotes
-                while (hasMore) {
-                    const rangeEnd = rangeStart + BATCH_SIZE - 1;
-                    const { data: cajas, error } = await supabase.from('cajas')
-                        .select('*')
-                        .range(rangeStart, rangeEnd)
-                        .order('nombre_identificador', { ascending: true });
-                    
-                    if (error) throw error;
+                // Log después de generar con éxito
+                await logAction(`Descargó Reporte ${reportType}`, { tipo: reportType, filas: reportData.length });
 
-                    allCajas.push(...cajas);
-                    rangeStart += BATCH_SIZE;
-                    hasMore = cajas.length === BATCH_SIZE;
-
-                    const percent = Math.round((allCajas.length / totalCount) * 100);
-                    button.textContent = `Generando... (${percent}%)`;
-                }
-
-                // 3. Preparar los datos (eliminar campos internos de Supabase si es necesario)
-                const reportData = allCajas.map(c => ({
-                    'Nombre': c.nombre_identificador,
-                    'Placa': c.placa,
-                    'Tipo': c.tipo,
-                    'Medida': c.medida,
-                    'Num Llantas': c.num_llantas,
-                    'Origen': c.origen,
-                    'Propiedad': c.propiedad,
-                    'Propietario': c.propietario,
-                    'Estatus': c.estatus,
-                    'ID Interno': c.id,
-                    'Fecha Creacion': new Date(c.created_at).toLocaleString()
-                }));
-                
-                // 4. Generar Excel
                 const worksheet = XLSX.utils.json_to_sheet(reportData);
                 const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "Cajas");
-                const fileName = `Reporte_General_Cajas_${new Date().toISOString().split('T')[0]}.xlsx`;
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
                 XLSX.writeFile(workbook, fileName);
 
-            } catch (err) { 
-                showAlert(`Error al generar el reporte de cajas: ${err.message}`, 'error'); 
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Descargar Reporte de Cajas';
+            } catch (err) {
+                 await logAction(`Error al descargar Reporte ${reportType}`, { error: err.message });
+                 showAlert(`Error al generar el reporte: ${err.message}`, 'error');
             }
         };
 
 
+        const handleFleetDelete = async (id, type) => {
+            // Validar si la caja o camión están en uso
+            try {
+                let checkQuery;
+                if (type === 'cajas') {
+                    checkQuery = supabase.from('coordenadas').select('id', { count: 'exact' }).eq('caja_id', id);
+                } else if (type === 'camiones') {
+                    checkQuery = supabase.from('coordenadas').select('id', { count: 'exact' }).eq('camion_id', id);
+                }
+                const { count, error } = await checkQuery;
+                if (error) throw error;
+                if (count > 0) {
+                    throw new Error(`No se puede eliminar: ${type === 'cajas' ? 'La caja' : 'El camión'} está asignado a ${count} viaje(s) activo(s).`);
+                }
+            } catch (validationError) {
+                showAlert(validationError.message, 'error');
+                await logAction(`Intento fallido eliminar ${type}`, { id: id, error: validationError.message });
+                return;
+            }
+
+            let nombreElemento = `Elemento ${id}`; // Nombre default para log
+            try {
+                // Intentar obtener el nombre para un log más descriptivo
+                const { data: itemData } = await supabase.from(type).select('nombre_identificador').eq('id', id).single();
+                if (itemData) nombreElemento = itemData.nombre_identificador;
+            } catch (e) {/* Ignorar error si no se encuentra */}
+
+            openConfirmModal(`¿Seguro que quieres eliminar ${type === 'cajas' ? 'la caja' : 'el camión'} "${nombreElemento}"?`, async () => {
+                try {
+                    const { error } = await supabase.from(type).delete().eq('id', id);
+                    if (error) throw error;
+
+                    await logAction(`Eliminó ${type === 'cajas' ? 'Caja' : 'Camión'}`, { id: id, nombre: nombreElemento });
+                    showAlert('Elemento eliminado.');
+                    if (type === 'camiones') await loadAdminCamionesData();
+                    if (type === 'cajas') await loadAdminCajasData(true);
+                } catch (err) {
+                    await logAction(`Error al eliminar ${type === 'cajas' ? 'Caja' : 'Camión'}`, { error: err.message, id: id });
+                    showAlert(`Error: ${err.message}`, 'error');
+                } finally {
+                    closeConfirmModal();
+                }
+            });
+        };
+
         const handleCreateUser = async (event) => {
             const { data: { session: adminSession } } = await supabase.auth.getSession();
+            const formData = new FormData(event.target); // Mover formData aquí para usarlo en log de error
+            const username = formData.get('username').toLowerCase(); // Para log
             if (!adminSession) { showAlert('Error de autenticación.', 'error'); return; }
             try {
-                const formData = new FormData(event.target);
-                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email: formData.get('email'), password: formData.get('password') });
-                if (signUpError) throw signUpError;
-                const { error: profileError } = await supabase.from('profiles').insert({
-                    id: signUpData.user.id, full_name: formData.get('fullname'), role: formData.get('role'),
-                    tipo_operador: formData.get('role') === 'Chofer' ? formData.get('tipo_operador') : null
+
+                // --- CAMBIO: Usar "Email Falso" (Opción 2) para signUp ---
+                const email = username + AUTH_DOMAIN; // 1. Inventar el email
+
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                    email: email, // 2. Usar email falso
+                    password: formData.get('password')
                 });
+                if (signUpError) throw signUpError;
+
+                // --- CAMBIO: Guardar 'username' y 'email falso' en profiles ---
+                const { error: profileError } = await supabase.from('profiles').insert({
+                    id: signUpData.user.id,
+                    full_name: formData.get('fullname'),
+                    role: formData.get('role'),
+                    tipo_operador: formData.get('role') === 'Chofer' ? formData.get('tipo_operador') : null,
+                    username: username, // Guardamos el username
+                    email: email // Guardamos el email falso
+                });
+                // --- FIN CAMBIO ---
+
                 if (profileError) throw profileError;
+
+                 // Log Éxito
+                 await logAction('Creó Usuario', {
+                     userId: signUpData.user.id,
+                     username: username,
+                     role: formData.get('role')
+                 });
+
                 showAlert('¡Usuario creado con éxito!');
                 event.target.reset();
                 await loadAdminUsersData();
             } catch (err) {
+                 // Log Error
+                 await logAction('Error al crear usuario', {
+                     error: err.message,
+                     usernameIntento: username
+                 });
                 if (err.message && err.message.includes('User already registered')) {
-                     showAlert('Este correo ya está registrado en el sistema. Si el usuario fue eliminado previamente, su registro de autenticación aún existe. Por favor, usa un correo diferente o contacta al administrador de la base de datos.', 'error');
+                     showAlert('Este correo/usuario ya está registrado en el sistema. Si el usuario fue eliminado previamente, su registro de autenticación aún existe. Por favor, usa un correo diferente o contacta al administrador de la base de datos.', 'error');
                 } else {
                     showAlert(`Error: ${err.message}`, 'error');
                 }
             } finally {
-                await supabase.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token, });
+                // Asegurarse de restaurar la sesión del admin
+                 if (adminSession) {
+                    await supabase.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token });
+                 }
             }
         };
-        const handleDeleteUser = async (userId) => {
-            if (userId === currentUser.id) { showAlert('No puedes eliminar tu propia cuenta.', 'error'); return; }
-            openConfirmModal(`¿Seguro que quieres eliminar este perfil de usuario? La cuenta de autenticación no se eliminará.`, async () => {
-                const { error } = await supabase.from('profiles').delete().eq('id', userId);
-                if (error) { showAlert(`Error: ${error.message}`, 'error'); }
-                else { showAlert('Perfil de usuario eliminado.'); await loadAdminUsersData(); }
+
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        const handleBulkCreateUsers = async (event) => {
+            const button = event.target;
+            const progressDiv = document.getElementById('bulk-create-progress');
+            const statusP = document.getElementById('bulk-create-status');
+
+            // Confirmación
+            let confirmed = false;
+            openConfirmModal("¿Estás seguro de que quieres crear 117 cuentas de chofer? Esta acción no se puede deshacer y puede tardar varios minutos.", () => {
+                confirmed = true;
                 closeConfirmModal();
             });
+
+            // Esperar a que el usuario confirme
+            await new Promise(resolve => {
+                const checkConfirm = () => {
+                    if (confirmed || document.getElementById('confirm-modal').classList.contains('hidden')) {
+                        resolve();
+                    } else {
+                        setTimeout(checkConfirm, 100);
+                    }
+                };
+                checkConfirm();
+            });
+
+            if (!confirmed) {
+                showAlert("Carga masiva cancelada.", "error");
+                return;
+            }
+
+            // --- DATOS DEL CSV (incrustados) ---
+            const csvData = `full_name,tipo_operador,username,password
+ARAIZA ESPINO JESUS ARTURO,Local,2634,Formas.2634
+AVILA  FELIPE CRUZ,Local,0024,Formas.0024
+BARAJAS ARELLANO DAVID ANTONIO,Local,0030,Formas.0030
+CARRILLO ESPARZA CARLOS ABEL,Local,2617,Formas.2617
+DE LA CRUZ OSEGUERA ESTEBAN,Local,1364,Formas.1364
+DIAZ RODRIGUEZ LUIS ENRIQUE,Local,2217,Formas.2217
+GONZALEZ RAMOS DANTE ALFREDO,Local,2614,Formas.2614
+GUERRERO HERNANDEZ JUAN CARLOS,Local,2263,Formas.2263
+HERRERA MARTINEZ ALBERTO,Local,2609,Formas.2609
+JIMENEZ GALLEGOS JORGE RICARDO,Local,2480,Formas.2480
+LOPEZ JAMANGAPE MISAEL,Local,1866,Formas.1866
+MEDINA IGLESIAS FERMIN,Local,1875,Formas.1875
+MEDRANO RUBIO ADRIAN,Local,1926,Formas.1926
+PEREA DE LEON KEVIN ALEJANDRO,Local,2664,Formas.2664
+PEREZ HERNANDEZ LAZARO DAVID,Local,1143,Formas.1143
+RAMIREZ SOLIS EDUARDO,Local,2127,Formas.2127
+REVELES LEON JORGE RONNI,Local,2640,Formas.2640
+RUIZ HERRERA ERICK,Local,2368,Formas.2368
+SALAZAR RODRIGUEZ HECTOR,Local,2527,Formas.2527
+TERRONES HERRERA SERGIO ALFREDO,Local,2610,Formas.2610
+ACOSTA GOMEZ RICARDO,Cruce,1785,Formas.1785
+ALDERETE GARCIA ALEJANDRO,Cruce,2203,Formas.2203
+AVILA LOPEZ JOSE PEDRO,Cruce,1894,Formas.1894
+BAUTISTA CHAVEZ HECTOR FERNANDO,Cruce,1515,Formas.1515
+BUENO ALVAREZ JORGE ALBERTO,Cruce,2558,Formas.2558
+CALDERA MACIAS MARCOS RICARDO,Cruce,2544,Formas.2544
+CALDERON LUNA OSCAR ALFREDO,Cruce,2343,Formas.2343
+CARDONA RIVERA LUIS ALBERTO,Cruce,2576,Formas.2576
+CHAVEZ MARTINEZ JOSE CRUZ,Cruce,2420,Formas.2420
+DE ANDA TORRES EMANUEL,Cruce,2442,Formas.2442
+DOMINGUEZ HERNANDEZ MANUEL ALEJANDRO,Cruce,2452,Formas.2452
+DOMINGUEZ ORTEGA CESAR OMAR,Cruce,2513,Formas.2513
+ESCOBEDO HERNANDEZ RAMON,Cruce,2581,Formas.2581
+ESPARZA DIAZ CARLOS ARMANDO,Cruce,1897,Formas.1897
+FLORES ALVAREZ JOSE MANUEL,Cruce,2133,Formas.2133
+FLORES GUEVARA JORGE,Cruce,2170,Formas.2170
+GARCIA MARTINEZ JUAN ANTONIO,Cruce,1717,Formas.1717
+GOMEZ RODRIGUEZ CESAR,Cruce,2595,Formas.2595
+GONZALEZ GONZALEZ JESUS MANUEL,Cruce,1915,Formas.1915
+HERNANDEZ REYES HECTOR MANUEL,Cruce,2450,Formas.2450
+IBARRA OROZCO ROBERTO ALONSO,Cruce,2489,Formas.2489
+LOPEZ GONZALEZ JUAN,Cruce,0204,Formas.0204
+LOZANO LOPEZ RICARDO,Cruce,1805,Formas.1805
+LUEVANO CHAVEZ MANUEL ALEJANDRO,Cruce,2563,Formas.2563
+MAGALLANES DOMINGUEZ JUAN ANTONIO,Cruce,2451,Formas.2451
+MARTINEZ ALVARADO SERGIO ALBERTO,Cruce,2341,Formas.2341
+MARTINEZ REYES JUAN ANTONIO,Cruce,1849,Formas.1849
+MOLINA VALLES JOSE ARMANDO,Cruce,2275,Formas.2275
+MONTES CHAVEZ VICTOR MANUEL,Cruce,1995,Formas.1995
+MORAN DE LA ROSA JUAN MANUEL,Cruce,2017,Formas.2017
+MORENO ROCHA LORENZO,Cruce,0457,Formas.0457
+MUÑOZ ARRIAGA CESAR ALFREDO,Cruce,2577,Formas.2577
+NUÑEZ SOTO LUIS ENRIQUE,Cruce,2615,Formas.2615
+ORTEGA LOPEZ EFREN,Cruce,2580,Formas.2580
+RAMIREZ GARCIA MANUEL,Cruce,2358,Formas.2358
+REYES AGUILAR PEDRO,Cruce,2462,Formas.2462
+REYES CARDONA JOSE ANTONIO,Cruce,2551,Formas.2551
+REYES ORTEGA DANIEL,Cruce,2575,Formas.2575
+RIOS VAZQUEZ JUAN CARLOS,Cruce,1118,Formas.1118
+RIVERA LOZANO MANUEL DE JESUS,Cruce,0619,Formas.0619
+RODRIGUEZ BARRIENTOS JUAN CARLOS,Cruce,1739,Formas.1739
+SANCHEZ SANCHEZ JESUS MANUEL,Cruce,2541,Formas.2541
+SILVA REYES EDGAR EDUARDO,Cruce,2638,Formas.2638
+SOTO CERROS OSCAR EFRAIN,Cruce,2515,Formas.2515
+TORRES HERNANDEZ RICARDO,Cruce,1750,Formas.1750
+VALLES ORTEGA VICTOR MANUEL,Cruce,2574,Formas.2574
+VAZQUEZ CARLOS ALBERTO,Cruce,2205,Formas.2205
+VAZQUEZ TORRES JOSE JAIME,Cruce,1753,Formas.1753
+ALDAMA CARLOS,Foráneo Chihuahua,2528,Formas.2528
+BAÑUELOS CHAVEZ SAMUEL,Foráneo Chihuahua,2543,Formas.2543
+CRUZ ORTIZ JUAN ANTONIO,Foráneo Chihuahua,1798,Formas.1798
+DELGADO DE LEON JESUS ALFREDO,Foráneo Chihuahua,2276,Formas.2276
+DIAZ DE LEON GOMEZ JOSE GUADALUPE,Foráneo Chihuahua,1746,Formas.1746
+ESPINOZA RUIZ CESAR OMAR,Foráneo Chihuahua,2676,Formas.2676
+FLORES SAUCEDO EDGAR,Foráneo Chihuahua,2641,Formas.2641
+GUTIERREZ RAMIREZ ALBERTO,Foráneo Chihuahua,1971,Formas.1971
+HOLGUIN AVILA JOSE DE LA LUZ,Foráneo Chihuahua,2477,Formas.2477
+LOPEZ HERNANDEZ IGNACIO,Foráneo Chihuahua,2679,Formas.2679
+LOPEZ VAZQUEZ SERGIO,Foráneo Chihuahua,0205,Formas.0205
+LUEVANO SANCHEZ SALVador,Foráneo Chihuahua,2578,Formas.2578
+MARIN LOPEZ GREGORIO,Foráneo Chihuahua,2582,Formas.2582
+MARTINEZ RAMIREZ JUAN CARLOS,Foráneo Chihuahua,1336,Formas.1336
+OLAGUE QUIÑONEZ LUIS ALFREDO,Foráneo Chihuahua,2677,Formas.2677
+ORTIZ RAMIREZ HECTOR MANUEL,Foráneo Chihuahua,2418,Formas.2418
+RAMIREZ BAUTISTA ADRIAN,Foráneo Chihuahua,2046,Formas.2046
+REYES LARA DANTE,Foráneo Chihuahua,2020,Formas.2020
+VALLES HERNANDEZ MANUEL MARCELINO,Foráneo Chihuahua,0273,Formas.0273
+GONZALEZ LOZANO ENRIQUE,Foráneo Pacífico,1794,Formas.1794
+GONZALEZ MARTINEZ MAURICIO,Foráneo Pacífico,0877,Formas.0877
+HARO IMPERIAL JOSE ANTONIO,Foráneo Pacífico,2684,Formas.2684
+HERNANDEZ CONTRERAS JOSE FERNANDO,Foráneo Pacífico,2476,Formas.2476
+LIRA TRISTAN JOSE ANGEL,Foráneo Pacífico,2668,Formas.2668
+MARTA RUBIO MARTIN,Foráneo Pacífico,1658,Formas.1658
+RODRIGUEZ RAMIREZ FERNANDO,Foráneo Pacífico,1633,Formas.1633
+RODRIGUEZ VALLES JOSE FRANCISCO,Foráneo Pacífico,0235,Formas.0235
+RUEDA SALAZAR ISMAEL,Foráneo Pacífico,2546,Formas.2546
+RUIZ ALVARADO PEDRO,Foráneo Pacífico,1373,Formas.1373
+TORRES GARAY LUIS HUMBERTO,Foráneo Pacífico,2691,Formas.2691
+BENITEZ BORBOA MARIO ALBERTO,Local,1420,Formas.1420
+CASTRO PARRA ALAN,Local,1919,Formas.1919
+COSMES LUZANILLA IGNACIO,Local,2022,Formas.2022
+FELIX LEYVA JUAN,Local,1448,Formas.1448
+GASTELUM CARDENAS JESUS ANTONIO,Local,2166,Formas.2166
+LOPEZ GUTIERREZ ALONSO MIGUEL,Local,2359,Formas.2359
+LOPEZ GUTIERREZ VICTOR RAMON,Local,2280,Formas.2280
+MEDINA ROSAS DANIEL ALEJANDRO,Local,1913,Formas.1913
+MORALES CANO HECTOR RAUL,Local,2277,Formas.2277
+MORENO CORONADO JESUS ALBERTO,Local,2243,Formas.2243
+MORENO RIOS MARTIN,Local,2156,Formas.2156
+OCHOA HERRERA IGNACIO,Local,1529,Formas.1529
+SOTO VALENZUELA JUAN,Local,1824,Formas.1824
+TORRES LOPEZ GERARDO,Local,1607,Formas.1607
+VALDEZ MOROYOQUI RAMON ARMANDO,Local,1702,Formas.1702
+VALENZUELA AGUILERA MARTIN,Local,2163,Formas.2163
+VEGA AGUILAR MARTIN,Local,2346,Formas.2346`;
+            // --- FIN DATOS ---
+
+            button.disabled = true;
+            progressDiv.classList.remove('hidden');
+
+            let adminSession; // Guardar sesión fuera del try
+            let successCount = 0;
+            let errorCount = 0;
+            let omitCount = 0;
+            let errorMessages = [];
+
+            try {
+                const sessionResult = await supabase.auth.getSession();
+                adminSession = sessionResult.data.session;
+                if (!adminSession) throw new Error('Sesión de administrador no válida.');
+
+                const lines = csvData.split('\n').slice(1); // Omitir cabecera
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    const [full_name, tipo_operador, username, password] = line.split(',');
+                    statusP.textContent = `Procesando ${i + 1} de ${lines.length}: ${username}`;
+                    let currentUserId = null;
+                    let currentUserEmail = null;
+
+                    try {
+                        const email = username.toLowerCase() + AUTH_DOMAIN;
+                        currentUserEmail = email;
+
+                        // --- PAUSA 1 (Antes de Auth) ---
+                        await delay(1500);
+
+                        // 1. Crear la cuenta de autenticación
+                        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                            email: email,
+                            password: password
+                        });
+
+                        if (signUpError) {
+                            if (signUpError.message.includes('User already registered') || signUpError.message.includes('rate limit')) {
+                                // Si ya existe o hay rate limit, lo marcamos como omitido/error
+                                throw new Error(`El usuario ${username} ya existe o se alcanzó el límite.`);
+                            }
+                            throw signUpError; // Lanzar otros errores de signUp
+                        }
+
+                        currentUserId = signUpData.user.id;
+
+                        // --- PAUSA 2 (Antes de Profile) ---
+                        await delay(1500);
+
+                        // 2. Crear el perfil en la base de datos
+                        const { error: profileError } = await supabase.from('profiles').insert({
+                            id: signUpData.user.id,
+                            full_name: full_name,
+                            role: 'Chofer',
+                            tipo_operador: tipo_operador,
+                            username: username.toLowerCase(),
+                            email: email
+                        });
+
+                        if (profileError) {
+                             // Si falla el perfil, lo reportamos
+                             // Podríamos intentar borrar el usuario de Auth aquí, pero es complejo y riesgoso
+                             throw new Error(`Error al crear perfil para ${username}: ${profileError.message}`);
+                        }
+
+                        successCount++;
+
+                    } catch (err) {
+                        console.error(`Error procesando ${username}:`, err.message);
+                        // Clasificar el error
+                        if (err.message.includes('ya existe') || err.message.includes('already registered')) {
+                            omitCount++;
+                            errorMessages.push(`Usuario ${username}: Omitido (ya existía).`);
+                        } else if (err.message.includes('rate limit') || err.message.includes('Too Many Requests')) {
+                             errorCount++;
+                             errorMessages.push(`Usuario ${username}: Error (Límite de Supabase alcanzado).`);
+                             // Considerar una pausa extra si hay rate limit
+                             await delay(3000); // Pausa adicional de 3 segundos
+                        } else {
+                            errorCount++;
+                            errorMessages.push(`Usuario ${username}: ${err.message}`);
+                        }
+                    }
+
+                    // --- PAUSA 3 (Antes de setSession) ---
+                    await delay(1500);
+
+                    // Volver a iniciar sesión como admin, ya que signUp() te saca
+                    const { error: sessionError } = await supabase.auth.setSession({
+                        access_token: adminSession.access_token,
+                        refresh_token: adminSession.refresh_token,
+                    });
+                    // Recargar la sesión del admin después de setSession
+                    const newSessionResult = await supabase.auth.getSession();
+                    adminSession = newSessionResult.data.session;
+
+                    if (sessionError || !adminSession) {
+                         // Si perdemos la sesión del admin, no podemos continuar
+                         throw new Error("Error crítico: Sesión de administrador perdida. Refresca la página y limpia manualmente.");
+                    }
+                }
+
+                // Log general de la operación masiva
+                await logAction('Ejecutó Carga Masiva Usuarios', {
+                    exito: successCount,
+                    omitidos: omitCount,
+                    errores: errorCount,
+                    primerosErrores: errorMessages.slice(0, 5)
+                });
+
+                // Reporte final
+                let finalMessage = `Creación masiva completada.\n\nÉxito: ${successCount} usuarios creados.\nOmitidos (ya existían): ${omitCount}\nErrores: ${errorCount} usuarios fallidos.`;
+                if (errorCount > 0) {
+                    finalMessage += `\n\nErrores (primeros 5):\n- ${errorMessages.slice(0, 5).join('\n- ')}`;
+                    showAlert(finalMessage, 'error');
+                } else {
+                    showAlert(finalMessage, 'success');
+                }
+
+            } catch (err) { // Captura errores generales (ej. fallo al obtener sesión admin, error de setSession)
+                 showAlert(`Error crítico en carga masiva: ${err.message}`, 'error');
+                 await logAction('Error Crítico Carga Masiva', { error: err.message });
+                 // Asegurar que el botón se reactive y el loader se oculte
+                 button.disabled = false;
+                 progressDiv.classList.add('hidden');
+                 statusP.textContent = 'Procesando... por favor espera.';
+                 return; // Detener la ejecución
+            }
+
+            // Si todo terminó (con o sin errores internos), reactivar UI
+            button.disabled = false;
+            progressDiv.classList.add('hidden');
+            statusP.textContent = 'Procesando... por favor espera.';
+            await loadAdminUsersData(); // Recargar la lista de usuarios
         };
-        
+
+        const handleDeleteUser = async (userId) => {
+            if (userId === currentUser.id) { showAlert('No puedes eliminar tu propia cuenta.', 'error'); return; }
+
+            let usernameToDelete = `Usuario ${userId}`; // Default para log
+            try { // Intentar obtener username para log
+                const { data: profileData } = await supabase.from('profiles').select('username').eq('id', userId).single();
+                if (profileData) usernameToDelete = profileData.username;
+            } catch(e) {/* Ignorar */}
+
+            openConfirmModal(`¿Seguro que quieres eliminar el perfil del usuario @${usernameToDelete}? La cuenta de autenticación no se eliminará.`, async () => {
+                try {
+                    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+                    if (error) throw error;
+
+                    await logAction('Eliminó Perfil Usuario', { userId: userId, username: usernameToDelete });
+                    showAlert('Perfil de usuario eliminado.');
+                    await loadAdminUsersData();
+                } catch (err) {
+                    await logAction('Error al eliminar perfil', { error: err.message, userId: userId });
+                    showAlert(`Error: ${err.message}`, 'error');
+                } finally {
+                    closeConfirmModal();
+                }
+            });
+        };
+
+        // --- NUEVO: Cargar y Mostrar Logs ---
+        const loadAdminLogsData = async () => {
+            const container = document.getElementById('admin-content-logs');
+            container.innerHTML = `<div class="loader mx-auto"></div>`;
+            try {
+                // Traer los últimos 100 logs, ordenados por fecha descendente
+                const { data: logs, error } = await supabase
+                    .from('app_log')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(100);
+
+                if (error) throw error;
+
+                container.innerHTML = `
+                    <h3 class="text-xl font-semibold mb-4">Últimos Registros de Actividad (Máx. 100)</h3>
+                    <div class="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                        ${logs.length === 0 ? '<p>No hay registros de actividad.</p>' : logs.map(log => `
+                            <div class="bg-gray-50 p-3 rounded-lg text-sm">
+                                <p>
+                                    <span class="font-semibold">${new Date(log.created_at).toLocaleString()}</span> -
+                                    Usuario: <span class="font-medium">${log.username || log.user_id}</span>
+                                </p>
+                                <p>
+                                    Acción: <span class="font-bold text-blue-700">${log.action}</span>
+                                </p>
+                                ${log.details ? `<pre class="mt-1 text-xs bg-white p-2 rounded overflow-x-auto">${JSON.stringify(log.details, null, 2)}</pre>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>`;
+            } catch (err) {
+                showAlert(`Error al cargar los logs: ${err.message}`, 'error');
+                container.innerHTML = `<p class="text-red-500">No se pudieron cargar los logs.</p>`;
+                if (currentUser) await logAction('Error al cargar logs', { error: err.message }); // Loguear el error de carga de logs
+            }
+        };
+
         // --- EVENT LISTENERS & INITIALIZATION ---
         document.getElementById('login-form').addEventListener('submit', handleLogin);
-        
         document.addEventListener('click', (event) => {
-            // Usar .closest() para delegación de eventos
             const button = event.target.closest('button');
             if(!button) return;
 
             if(button.id.startsWith('logout-button')) handleLogout();
-            
             if(button.classList.contains('tab-btn')) {
                 document.querySelectorAll('.tab-btn').forEach(btn => {
                     btn.classList.remove('text-blue-600', 'border-blue-600');
                     btn.classList.add('text-gray-500', 'border-transparent');
                 });
                 button.classList.add('text-blue-600', 'border-blue-600');
+                 // Ocultar todos los contenidos y mostrar el seleccionado
                 document.querySelectorAll('.admin-tab-content').forEach(content => content.classList.add('hidden'));
-                document.getElementById(`admin-content-${button.dataset.tab}`).classList.remove('hidden');
-                loadAdminData();
+                const contentId = `admin-content-${button.dataset.tab}`;
+                const contentElement = document.getElementById(contentId);
+                if (contentElement) {
+                    contentElement.classList.remove('hidden');
+                    loadAdminData(); // Cargar datos de la pestaña activa
+                } else {
+                    console.error(`Contenedor no encontrado para la pestaña: ${button.dataset.tab}`);
+                }
             }
             if(button.classList.contains('add-coordenada-btn')) addCoordenadaInput(button.dataset.container);
             if(button.classList.contains('remove-coordenada-btn')) button.parentElement.remove();
             if(button.classList.contains('edit-viaje-btn')) openEditViajeModal(button.dataset.viajeId);
-            if(button.classList.contains('edit-caja-btn')) openEditCajaModal(button.closest('.caja-card').dataset.id);
             if(button.classList.contains('close-modal-btn')) button.closest('.fixed').classList.add('hidden');
             if(button.classList.contains('delete-fleet-btn')) handleFleetDelete(button.dataset.id, button.dataset.type);
             if(button.classList.contains('delete-user-btn')) handleDeleteUser(button.dataset.userId);
             if(button.classList.contains('complete-viaje-btn')) openUploadModal(button.dataset.viajeId);
+            if(button.id === 'bulk-create-users-btn') handleBulkCreateUsers(event);
             if(button.classList.contains('download-report-btn')) {
-                handleDownloadReport(button);
+                const status = button.dataset.status;
+                handleDownloadReport(status);
             }
+            if(button.classList.contains('edit-caja-btn')) openEditCajaModal(button.dataset.cajaId);
         });
 
         document.addEventListener('submit', async (event) => {
-            try {
+             try {
                 event.preventDefault();
                 const form = event.target;
-                if (form.id === 'create-viaje-form') await handleViajeSubmit(event, false);
-                if (form.id === 'edit-viaje-form') await handleViajeSubmit(event, true);
+                if (form.id === 'create-viaje-form') await handleCreateViaje(event);
+                if (form.id === 'edit-viaje-form') await handleUpdateViaje(event);
                 if (form.id === 'complete-trip-form') await handleTripCompletion(event);
                 if (form.id === 'admin-add-camion-form') await handleCamionAdd(event);
                 if (form.id === 'admin-add-caja-form') await handleCajaAdd(event);
                 if (form.id === 'edit-caja-form') await handleUpdateCaja(event);
                 if (form.id === 'create-user-form') await handleCreateUser(event);
             } catch (err) {
-                showAlert(`Error: ${err.message}`, 'error');
-                console.error("Submit error:", err);
+                 // Error no capturado por los handlers individuales (raro)
+                showAlert(`Error inesperado: ${err.message}`, 'error');
+                console.error("Submit error (global):", err);
+                // Loguear error global si es posible
+                 if (currentUser) {
+                    await logAction('Error Global Submit', { error: err.message, formId: event.target.id });
+                }
             }
         });
 
@@ -1344,6 +1858,4 @@
     </script>
 </body>
 </html>
-
-
 
