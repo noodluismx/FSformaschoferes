@@ -234,6 +234,7 @@
                         <li><strong>Reporte de Viajes Asignados:</strong> Descarga un Excel con todos los viajes que tienen el estado "Asignado".</li>
                         <li><strong>Reporte de Viajes Completados:</strong> Descarga un Excel con todos los viajes que tienen el estado "Completado" o "Pagado".</li>
                         <li><strong>Reporte General de Cajas:</strong> Descarga un Excel con la lista completa de todas las cajas registradas en el sistema.</li>
+                        <li><strong>Reporte General de Usuarios:</strong> Descarga un Excel con la lista de todos los usuarios registrados.</li>
                     </ul>
                     <p class="mt-2"><strong>Nota:</strong> La generación de reportes puede tardar unos segundos o minutos dependiendo de la cantidad de datos.</p>
                 `,
@@ -1350,9 +1351,10 @@
 
         const loadAdminReportsData = async () => {
             const container = document.getElementById('admin-content-reportes');
+            // Modificado grid-cols-3 a grid-cols-4 para el nuevo reporte
             container.innerHTML = `
                 <h3 class="text-xl font-semibold mb-4">Generar Reportes en Excel</h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div class="bg-gray-50 p-6 rounded-lg">
                         <h4 class="font-semibold text-lg mb-2">Reporte de Viajes Asignados</h4>
                         <p class="text-gray-600 mb-4 text-sm">Descarga una lista de todos los viajes que están actualmente en curso.</p>
@@ -1367,6 +1369,12 @@
                         <h4 class="font-semibold text-lg mb-2">Reporte General de Cajas</h4>
                         <p class="text-gray-600 mb-4 text-sm">Descarga una lista completa de todas las cajas registradas en el sistema.</p>
                         <button data-status="Cajas" class="download-report-btn w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Reporte de Cajas</button>
+                    </div>
+                    <!-- Nuevo Reporte de Usuarios -->
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h4 class="font-semibold text-lg mb-2">Reporte General de Usuarios</h4>
+                        <p class="text-gray-600 mb-4 text-sm">Descarga una lista completa de todos los usuarios registrados.</p>
+                        <button data-status="Usuarios" class="download-report-btn w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">Descargar Reporte de Usuarios</button>
                     </div>
                 </div>
             `;
@@ -1418,7 +1426,19 @@
                         'ID': c.id,
                         'Fecha Creación': c.created_at
                     }));
-
+                } else if (reportType === 'Usuarios') { // NUEVO CASO
+                    // Reporte de Usuarios
+                    const query = supabase.from('profiles').select('*');
+                    const usuarios = await fetchAllPages(query);
+                    reportData = usuarios.map(u => ({
+                        'Nombre Completo': u.full_name,
+                        'Username': u.username,
+                        'Rol': u.role,
+                        'Tipo Operador': u.tipo_operador,
+                        'Email (Sistema)': u.email, // Email real o falso
+                        'ID Usuario': u.id,
+                        'Fecha Creación Perfil': u.created_at
+                    }));
                 } else {
                     // Reportes de Viajes
                     const statuses = reportType === 'Completado' ? ['Completado', 'Pagado'] : [reportType];
@@ -1689,7 +1709,7 @@
             // Listener de Carga Masiva Eliminado
             // if(button.id === 'bulk-create-users-btn') handleBulkCreateUsers(event);
             if(button.classList.contains('download-report-btn')) {
-                const status = button.dataset.status;
+                const status = button.dataset.status; // 'Asignado', 'Completado', 'Cajas', 'Usuarios'
                 handleDownloadReport(status);
             }
             if(button.classList.contains('edit-caja-btn')) openEditCajaModal(button.dataset.cajaId);
